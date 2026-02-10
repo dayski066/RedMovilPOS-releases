@@ -3,6 +3,9 @@ Gestor de facturas
 """
 import sqlite3
 from config import INVOICE_PREFIX
+from app.utils.logger import get_logger
+
+logger = get_logger('factura')
 
 
 class FacturaManager:
@@ -58,7 +61,7 @@ class FacturaManager:
         """
         # INICIAR TRANSACCIÓN
         if not self.db.begin_transaction():
-            print("[ERROR] No se pudo iniciar transacción")
+            logger.error("No se pudo iniciar transacción para guardar factura")
             return None
 
         try:
@@ -154,7 +157,7 @@ class FacturaManager:
                         "UPDATE productos SET stock = stock - ? WHERE id = ?",
                         (item['cantidad'], producto_id)
                     )
-                    print(f"[STOCK] Producto ID {producto_id}: stock reducido en {item['cantidad']}")
+                    logger.debug(f"Producto ID {producto_id}: stock reducido en {item['cantidad']}")
 
             # Validar que la suma de items coincida con el total (con margen de 0.01 por redondeo)
             if abs(suma_items - datos['totales']['total']) > 0.01:
@@ -182,7 +185,7 @@ class FacturaManager:
                         ref_id=factura_id,
                         ref_type='factura'
                     )
-                    print(f"[CAJA] Movimiento registrado: Factura {datos['numero']} - {datos['totales']['total']}€")
+                    logger.info(f"Movimiento de caja registrado: Factura {datos['numero']} - {datos['totales']['total']}€")
             except sqlite3.Error as caja_error:
                 # Si falla el registro de caja, revertir TODO
                 raise Exception(f"Error registrando movimiento de caja: {caja_error}")
@@ -200,19 +203,18 @@ class FacturaManager:
                         datos={'numero': datos['numero'], 'total': datos['totales']['total'], 'cliente': datos['cliente'].get('nombre', 'Sin cliente')}
                     )
                 except sqlite3.Error as audit_error:
-                    print(f"[AUDITORIA] Error registrando operación: {audit_error}")
+                    logger.warning(f"Error registrando auditoría: {audit_error}")
                     # No abortar por error de auditoría
 
             # CONFIRMAR TRANSACCIÓN - Todo salió bien
             self.db.commit()
-            print(f"[TRANSACCION] Factura {datos['numero']} guardada exitosamente")
+            logger.info(f"Factura {datos['numero']} guardada exitosamente")
             return factura_id
 
         except (sqlite3.Error, ValueError, Exception) as e:
             # REVERTIR TRANSACCIÓN - Algo falló
             self.db.rollback()
-            print(f"[TRANSACCION REVERTIDA] Error guardando factura: {e}")
-            print(f"  Todos los cambios han sido revertidos")
+            logger.error(f"Error guardando factura (transacción revertida): {e}")
             return None
 
     def obtener_factura(self, factura_id):
@@ -335,7 +337,7 @@ class FacturaManager:
                         datos={'numero': factura['numero_factura'], 'total': factura.get('total')}
                     )
                 except sqlite3.Error as audit_error:
-                    print(f"[AUDITORIA] Error registrando operación: {audit_error}")
+                    logger.warning(f"Error registrando auditoría: {audit_error}")
 
             # CONFIRMAR TRANSACCIÓN - todos los cambios se guardan
             self.db.commit()
@@ -351,7 +353,7 @@ class FacturaManager:
         except sqlite3.Error as e:
             # REVERTIR TRANSACCIÓN - deshacer todos los cambios
             self.db.rollback()
-            print(f"Error eliminando factura: {e}")
+            logger.error(f"Error eliminando factura: {e}")
             return False, f"Error al eliminar factura: {str(e)}"
 
     def generar_pdf_desde_bd(self, factura_id):
@@ -369,7 +371,7 @@ class FacturaManager:
             # Obtener factura con todos sus datos
             factura = self.obtener_factura(factura_id)
             if not factura:
-                print(f"Factura {factura_id} no encontrada")
+                logger.error(f"Factura {factura_id} no encontrada")
                 return None
 
             # Preparar datos en el formato que espera PDFGenerator
@@ -429,7 +431,5 @@ class FacturaManager:
             return pdf_path
 
         except sqlite3.Error as e:
-            print(f"Error generando PDF desde BD: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error generando PDF desde BD: {e}", exc_info=True)
             return None

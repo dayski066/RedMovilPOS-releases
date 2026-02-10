@@ -3,6 +3,9 @@ Gestor de permisos y roles
 Verifica si un usuario tiene permiso para realizar una acción
 """
 import sqlite3
+from app.utils.logger import get_logger
+
+logger = get_logger('permission')
 
 
 class PermissionManager:
@@ -147,7 +150,7 @@ class PermissionManager:
                 return rol_id
             return None
         except (sqlite3.Error, OSError, ValueError) as e:
-            print(f"Error creando rol: {e}")
+            logger.error(f"Error creando rol: {e}")
             return None
     
     def actualizar_rol(self, rol_id, nombre, descripcion, permisos_codigos):
@@ -188,7 +191,7 @@ class PermissionManager:
             
             return True
         except (sqlite3.Error, OSError, ValueError) as e:
-            print(f"Error actualizando rol: {e}")
+            logger.error(f"Error actualizando rol: {e}")
             return False
     
     def eliminar_rol(self, rol_id):

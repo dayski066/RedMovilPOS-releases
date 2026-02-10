@@ -14,6 +14,7 @@ from app.ui.password_strength_widget import PasswordStrengthWidget
 from config import COMPANY_INFO, APP_VERSION, APP_NAME
 from app.i18n import tr
 from datetime import datetime
+from app.utils.logger import logger
 
 
 class LoginDialog(QDialog):
@@ -494,7 +495,7 @@ class LoginDialog(QDialog):
             if result and result.get('logo_path'):
                 return result['logo_path']
         except (OSError, ValueError, RuntimeError) as e:
-            print(f"Error obteniendo logo: {e}")
+            logger.error(f"Error obteniendo logo: {e}")
         return None
 
     def apply_styles(self):
@@ -748,7 +749,7 @@ class LoginDialog(QDialog):
                         password = crypto.desencriptar(pwd_encrypted)
                         self.password_input.setText(password)
                     except (OSError, ValueError, RuntimeError) as e:
-                        print(f"Error desencriptando contraseña: {e}")
+                        logger.error(f"Error desencriptando contraseña: {e}")
                         pass
 
             # Auto-login (login automático sin pulsar botón)
@@ -756,7 +757,7 @@ class LoginDialog(QDialog):
             self.check_autologin.setChecked(autologin == '1')
 
         except (OSError, ValueError, RuntimeError) as e:
-            print(f"Error cargando preferencias: {e}")
+            logger.error(f"Error cargando preferencias: {e}")
 
     def guardar_preferencias_login(self, username):
         """Guarda las preferencias de login"""
@@ -784,7 +785,7 @@ class LoginDialog(QDialog):
                 self._set_config('login_autologin', '0')
 
         except (OSError, ValueError, RuntimeError) as e:
-            print(f"Error guardando preferencias: {e}")
+            logger.error(f"Error guardando preferencias: {e}")
 
     def intentar_autologin_silencioso(self):
         """Intenta hacer login automático si está configurado"""
@@ -815,5 +816,5 @@ class LoginDialog(QDialog):
                 return False
 
         except (OSError, ValueError, RuntimeError) as e:
-            print(f"Error en autologin: {e}")
+            logger.error(f"Error en autologin: {e}")
             return False

@@ -5,6 +5,7 @@ Ancho: 58mm (aprox. 32-48 caracteres por línea)
 import sqlite3
 from datetime import datetime
 import subprocess
+from app.utils.logger import logger
 
 # Importación opcional de python-escpos (solo si está instalado)
 try:
@@ -54,7 +55,7 @@ class TicketPrinter:
                 datos['logo_path'] = establecimiento.get('logo_path') or ''
 
         except (sqlite3.Error, OSError, ValueError) as e:
-            print(f"Error obteniendo datos de establecimiento: {e}")
+            logger.error(f"Error obteniendo datos de establecimiento: {e}")
 
         return datos
 
@@ -359,7 +360,7 @@ class TicketPrinter:
                         logo_img = background
                     logo_height = logo_img.size[1] + 10  # Altura del logo + margen
                 except (sqlite3.Error, OSError, ValueError) as e:
-                    print(f"Error cargando logo: {e}")
+                    logger.error(f"Error cargando logo: {e}")
                     logo_img = None
 
             # Altura total: logo + texto + márgenes
