@@ -2,12 +2,16 @@
 Terminal Punto de Venta (TPV) - Interfaz moderna para ventas rápidas
 """
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
-                             QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QDialog,
-                             QMessageBox, QScrollArea, QFrame, QComboBox,
+                             QLabel, QTableWidget, QTableWidgetItem, QDialog,
+                             QScrollArea, QFrame, QComboBox,
                              QDoubleSpinBox, QSpinBox, QGroupBox, QHeaderView, QTextEdit,
                              QSizePolicy)
+from qfluentwidgets import SearchLineEdit
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QColor
+from app.ui.transparent_buttons import apply_btn_danger, apply_btn_success, apply_btn_warning, apply_btn_primary, apply_btn_cancel
+from app.ui.theme import COLOR_DANGER, COLOR_WARNING, COLOR_ACCENT, COLOR_PRIMARY
+from app.utils.notify import notify_success, notify_error, notify_warning, notify_info, ask_confirm
 from app.i18n import tr
 from app.db.database import Database
 from app.modules.caja_tpv_manager import CajaTpvManager
@@ -58,10 +62,9 @@ class CajaTPVTab(QWidget):
         scanner_layout = QHBoxLayout()
         scanner_label = QLabel(tr("Escanear EAN") + ":")
         scanner_label.setStyleSheet("font-weight: bold; font-family: 'Segoe UI', Arial, sans-serif;")
-        self.ean_input = QLineEdit()
+        self.ean_input = SearchLineEdit()
         self.ean_input.setPlaceholderText(tr("Código de barras o buscar..."))
         self.ean_input.setFont(QFont("Segoe UI", 12))
-        self.ean_input.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif;")
         self.ean_input.returnPressed.connect(self.buscar_producto_ean)
         self.ean_input.textChanged.connect(self.on_search_text_changed)  # Debouncing
         scanner_layout.addWidget(scanner_label)
@@ -76,23 +79,25 @@ class CajaTPVTab(QWidget):
         ])
         self.tabla_carrito.setStyleSheet("""
             QTableWidget {
-                background-color: #252526;
-                color: #ffffff;
-                border: 2px solid #3e3e42;
+                background-color: #2E3440;
+                color: #ECEFF4;
+                border: 2px solid #4C566A;
                 border-radius: 8px;
                 font-family: 'Segoe UI', Arial, sans-serif;
                 font-size: 12px;
-                gridline-color: #3e3e42;
+                gridline-color: #4C566A;
             }
             QTableWidget::item {
-                color: #ffffff;
+                color: #ECEFF4;
             }
             QHeaderView::section {
-                background-color: #0078d4;
-                color: white;
+                background-color: #3B4252;
+                color: #88C0D0;
                 padding: 8px;
                 font-weight: bold;
                 font-family: 'Segoe UI', Arial, sans-serif;
+                border: none;
+                border-bottom: 2px solid #88C0D0;
             }
         """)
         header = self.tabla_carrito.horizontalHeader()
@@ -119,24 +124,24 @@ class CajaTPVTab(QWidget):
         saldo_caja_frame = QFrame()
         saldo_caja_frame.setStyleSheet("""
             QFrame {
-                background-color: #1a252f;
-                border: 2px solid #0078d4;
+                background-color: #2E3440;
+                border: 2px solid #5E81AC;
                 border-radius: 8px;
                 padding: 10px;
             }
             QLabel {
-                color: #cccccc;
+                color: #D8DEE9;
                 background: transparent;
             }
         """)
         saldo_caja_layout = QHBoxLayout(saldo_caja_frame)
         saldo_caja_label_text = QLabel(f"💰 <b>{tr('Saldo Caja')}:</b>")
-        saldo_caja_label_text.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #cccccc; font-size: 13px;")
+        saldo_caja_label_text.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #D8DEE9; font-size: 13px;")
         saldo_caja_layout.addWidget(saldo_caja_label_text)
         saldo_caja_layout.addStretch()
         self.saldo_caja_label = QLabel("0.00 €")
         self.saldo_caja_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #4ec9b0;")
+        self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #88C0D0;")
         saldo_caja_layout.addWidget(self.saldo_caja_label)
         left_layout.addWidget(saldo_caja_frame)
 
@@ -144,13 +149,13 @@ class CajaTPVTab(QWidget):
         totales_frame = QFrame()
         totales_frame.setStyleSheet("""
             QFrame {
-                background-color: #252526;
-                border: 2px solid #3e3e42;
+                background-color: #2E3440;
+                border: 2px solid #4C566A;
                 border-radius: 10px;
                 padding: 15px;
             }
             QLabel {
-                color: #cccccc;
+                color: #D8DEE9;
                 background: transparent;
             }
         """)
@@ -158,7 +163,7 @@ class CajaTPVTab(QWidget):
 
         # Labels de totales
         label_subtotal = QLabel(f"<b>{tr('Subtotal')}:</b>")
-        label_subtotal.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #cccccc;")
+        label_subtotal.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #D8DEE9;")
         totales_layout.addWidget(label_subtotal, 0, 0)
 
         self.subtotal_label = QLabel("0.00 €")
@@ -168,7 +173,7 @@ class CajaTPVTab(QWidget):
         totales_layout.addWidget(self.subtotal_label, 0, 1)
 
         label_iva = QLabel(f"<b>{tr('IVA')} (21%):</b>")
-        label_iva.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #cccccc;")
+        label_iva.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #D8DEE9;")
         totales_layout.addWidget(label_iva, 1, 0)
 
         self.iva_label = QLabel("0.00 €")
@@ -184,7 +189,7 @@ class CajaTPVTab(QWidget):
         self.total_label = QLabel("0.00 €")
         self.total_label.setAlignment(Qt.AlignRight)
         self.total_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
-        self.total_label.setStyleSheet("color: #4ec9b0; font-family: 'Segoe UI', Arial, sans-serif;")
+        self.total_label.setStyleSheet("color: #88C0D0; font-family: 'Segoe UI', Arial, sans-serif;")
         totales_layout.addWidget(self.total_label, 2, 1)
 
         left_layout.addWidget(totales_frame)
@@ -208,7 +213,7 @@ class CajaTPVTab(QWidget):
             color: white;
             font-size: 36px;
             font-weight: bold;
-            background-color: #2c3e50;
+            background-color: #2E3440;
             border-radius: 8px;
             padding: 10px;
         """)
@@ -235,25 +240,13 @@ class CajaTPVTab(QWidget):
                 btn.setFont(QFont("", 18, QFont.Bold))
                 btn.setMinimumSize(70, 70)
                 if num == 'C':
-                    btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: transparent; color: #BF616A; border: 2px solid #BF616A;
-                            border-radius: 8px;
-                        }
-                        QPushButton:hover { background-color: transparent; color: #BF616A; border: 2px solid #BF616A; }
-                    """)
+                    apply_btn_danger(btn)
                     btn.clicked.connect(self.limpiar_cantidad)
                 elif num == '.':
                     btn.setEnabled(False)  # Deshabilitado por ahora
-                    btn.setStyleSheet("background-color: transparent; color: #5E6B7D; border: 2px solid #5E6B7D; border-radius: 6px;")
+                    btn.setStyleSheet("background-color: transparent; color: #4C566A; border: 2px solid #4C566A; border-radius: 6px;")
                 else:
-                    btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC;
-                            border-radius: 8px;
-                        }
-                        QPushButton:hover { background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; }
-                    """)
+                    apply_btn_primary(btn)
                     btn.clicked.connect(lambda checked, n=num: self.tecla_numero(n))
 
                 teclado_layout.addWidget(btn, row_idx, col_idx)
@@ -268,13 +261,7 @@ class CajaTPVTab(QWidget):
         btn_add = QPushButton("+ (F2)")
         btn_add.setFont(QFont("", 24, QFont.Bold))
         btn_add.setMinimumHeight(70)
-        btn_add.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C;
-                border-radius: 8px;
-            }
-            QPushButton:hover { background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C; }
-        """)
+        apply_btn_success(btn_add)
         btn_add.clicked.connect(self.abrir_producto_manual)
         btn_add.setShortcut("F2")  # Atajo de teclado
         acciones_layout.addWidget(btn_add, 0, 0)
@@ -283,13 +270,7 @@ class CajaTPVTab(QWidget):
         btn_cobrar = QPushButton("= (F1)")
         btn_cobrar.setFont(QFont("", 24, QFont.Bold))
         btn_cobrar.setMinimumHeight(70)
-        btn_cobrar.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #EBCB8B; border: 2px solid #EBCB8B;
-                border-radius: 8px;
-            }
-            QPushButton:hover { background-color: transparent; color: #EBCB8B; border: 2px solid #EBCB8B; }
-        """)
+        apply_btn_warning(btn_cobrar)
         btn_cobrar.clicked.connect(self.abrir_cobro)
         btn_cobrar.setShortcut("F1")  # Atajo de teclado
         acciones_layout.addWidget(btn_cobrar, 0, 1)
@@ -298,13 +279,7 @@ class CajaTPVTab(QWidget):
         btn_limpiar = QPushButton(tr("Limpiar") + "\n" + tr("Carrito"))
         btn_limpiar.setFont(QFont("", 12, QFont.Bold))
         btn_limpiar.setMinimumHeight(70)
-        btn_limpiar.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #BF616A; border: 2px solid #BF616A;
-                border-radius: 8px;
-            }
-            QPushButton:hover { background-color: transparent; color: #BF616A; border: 2px solid #BF616A; }
-        """)
+        apply_btn_danger(btn_limpiar)
         btn_limpiar.clicked.connect(self.limpiar_carrito)
         acciones_layout.addWidget(btn_limpiar, 1, 0, 1, 2)
 
@@ -318,7 +293,7 @@ class CajaTPVTab(QWidget):
         fav_header.addWidget(fav_label)
 
         btn_add_fav = QPushButton("+ " + tr("Agregar"))
-        btn_add_fav.setStyleSheet("background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; border-radius: 6px; padding: 5px 10px;")
+        apply_btn_primary(btn_add_fav)
         btn_add_fav.clicked.connect(self.agregar_favorito)
         fav_header.addWidget(btn_add_fav)
 
@@ -327,7 +302,7 @@ class CajaTPVTab(QWidget):
         # Scroll area para favoritos
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: 2px solid #bdc3c7; border-radius: 8px; }")
+        scroll.setStyleSheet("QScrollArea { border: 2px solid #4C566A; border-radius: 8px; }")
 
         self.favoritos_widget = QWidget()
         self.favoritos_layout = QGridLayout(self.favoritos_widget)
@@ -376,10 +351,10 @@ class CajaTPVTab(QWidget):
             self.cantidad_display.setText("1")
             # Opcional: mostrar indicador visual temporal
             self.cantidad_display.setStyleSheet("""
-                color: #f39c12;
+                color: #EBCB8B;
                 font-size: 36px;
                 font-weight: bold;
-                background-color: #2c3e50;
+                background-color: #2E3440;
                 border-radius: 8px;
                 padding: 10px;
             """)
@@ -388,7 +363,7 @@ class CajaTPVTab(QWidget):
                 color: white;
                 font-size: 36px;
                 font-weight: bold;
-                background-color: #2c3e50;
+                background-color: #2E3440;
                 border-radius: 8px;
                 padding: 10px;
             """))
@@ -415,7 +390,7 @@ class CajaTPVTab(QWidget):
             self.ean_input.clear()
             self.limpiar_cantidad()
         else:
-            QMessageBox.warning(self, tr("Producto No Encontrado"),
+            notify_warning(self, tr("Producto No Encontrado"),
                               tr("No se encontró ningún producto con EAN/IMEI") + f": {ean}")
             self.ean_input.selectAll()
 
@@ -442,7 +417,7 @@ class CajaTPVTab(QWidget):
                 cantidad_total = cantidad_en_carrito + cantidad
 
                 if stock_disponible <= 0:
-                    QMessageBox.warning(
+                    notify_warning(
                         self,
                         tr("Sin Stock"),
                         tr("El producto no tiene stock disponible") + f": '{nombre}'"
@@ -450,7 +425,7 @@ class CajaTPVTab(QWidget):
                     return
 
                 if cantidad_total > stock_disponible:
-                    QMessageBox.warning(
+                    notify_warning(
                         self,
                         tr("Stock Insuficiente"),
                         f"{tr('Stock disponible')}: {stock_disponible}\n"
@@ -520,60 +495,53 @@ class CajaTPVTab(QWidget):
             p_item.setTextAlignment(Qt.AlignCenter)
             self.tabla_carrito.setItem(row, 1, p_item)
 
-            # Cantidad editable - Centrado Bulletproof
-            cant_spin = QSpinBox()
-            cant_spin.setMinimum(1)
-            cant_spin.setMaximum(9999)
-            cant_spin.setValue(item['cantidad'])
-            cant_spin.setFont(QFont("Segoe UI", 11))
-            cant_spin.setFixedSize(70, 28)
-            cant_spin.setButtonSymbols(QSpinBox.UpDownArrows)
-            cant_spin.setStyleSheet("""
-                QSpinBox {
-                    border: none;
-                    background: transparent;
+            # Cantidad editable - Widget con botones + y - visibles
+            # Cantidad editable - [ - ] número [ + ] en horizontal
+            btn_cant_style = """
+                QPushButton {
+                    background-color: #3B4252;
                     color: #ffffff;
+                    border: 1px solid #4C566A;
+                    border-radius: 3px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0px;
+                    margin: 0px;
+                    text-align: center;
                 }
-                QSpinBox::up-button {
-                    subcontrol-origin: border;
-                    subcontrol-position: top right;
-                    width: 14px;
-                    border: none;
-                    background: transparent;
-                }
-                QSpinBox::down-button {
-                    subcontrol-origin: border;
-                    subcontrol-position: bottom right;
-                    width: 14px;
-                    border: none;
-                    background: transparent;
-                }
-                QSpinBox::up-arrow {
-                    image: none;
-                    width: 8px;
-                    height: 8px;
-                    border-left: 4px solid transparent;
-                    border-right: 4px solid transparent;
-                    border-bottom: 6px solid #aaa;
-                }
-                QSpinBox::down-arrow {
-                    image: none;
-                    width: 8px;
-                    height: 8px;
-                    border-left: 4px solid transparent;
-                    border-right: 4px solid transparent;
-                    border-top: 6px solid #aaa;
-                }
-            """)
-            cant_spin.valueChanged.connect(lambda val, i=idx: self.cambiar_cantidad(i, val))
-            
-            container_sp = QWidget()
-            container_sp.setStyleSheet("background-color: transparent;")
-            v_layout_sp = QVBoxLayout(container_sp)
-            v_layout_sp.setContentsMargins(0, 0, 0, 12)
-            v_layout_sp.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
-            v_layout_sp.addWidget(cant_spin)
-            self.tabla_carrito.setCellWidget(row, 2, container_sp)
+                QPushButton:hover { background-color: #5E81AC; }
+                QPushButton:pressed { background-color: #4C6E9A; }
+            """
+
+            container_cant = QWidget()
+            container_cant.setStyleSheet("background: transparent;")
+            h_layout_cant = QHBoxLayout(container_cant)
+            h_layout_cant.setContentsMargins(4, 5, 4, 0)
+            h_layout_cant.setSpacing(4)
+
+            btn_menos = QPushButton("-")
+            btn_menos.setFixedSize(26, 26)
+            btn_menos.setStyleSheet(btn_cant_style)
+
+            cant_label = QLabel(str(item['cantidad']))
+            cant_label.setFixedSize(28, 26)
+            cant_label.setAlignment(Qt.AlignCenter)
+            cant_label.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: bold; font-family: 'Segoe UI', Arial, sans-serif; background: transparent; padding-bottom: 3px;")
+
+            btn_mas = QPushButton("+")
+            btn_mas.setFixedSize(26, 26)
+            btn_mas.setStyleSheet(btn_cant_style)
+
+            btn_menos.clicked.connect(lambda checked, lbl=cant_label, i=idx: self._incrementar_cantidad(lbl, i, -1))
+            btn_mas.clicked.connect(lambda checked, lbl=cant_label, i=idx: self._incrementar_cantidad(lbl, i, 1))
+
+            h_layout_cant.addStretch()
+            h_layout_cant.addWidget(btn_menos, 0, Qt.AlignTop)
+            h_layout_cant.addWidget(cant_label, 0, Qt.AlignVCenter)
+            h_layout_cant.addWidget(btn_mas, 0, Qt.AlignTop)
+            h_layout_cant.addStretch()
+
+            self.tabla_carrito.setCellWidget(row, 2, container_cant)
 
             # Subtotal
             sub_item = QTableWidgetItem(f"{item['subtotal']:.2f} €")
@@ -589,7 +557,7 @@ class CajaTPVTab(QWidget):
             tot_item = QTableWidgetItem(f"{item['total']:.2f} €")
             tot_item.setTextAlignment(Qt.AlignCenter)
             tot_item.setFont(QFont("Segoe UI", 11, QFont.Bold))
-            tot_item.setForeground(QColor('#4ec9b0'))
+            tot_item.setForeground(QColor('#88C0D0'))
             self.tabla_carrito.setItem(row, 5, tot_item)
 
             # Botón eliminar - Centrado estructural
@@ -607,6 +575,15 @@ class CajaTPVTab(QWidget):
             v_layout_del.addWidget(btn_eliminar)
             self.tabla_carrito.setCellWidget(row, 6, container_del)
 
+    def _incrementar_cantidad(self, label, item_idx, delta):
+        """Incrementa o decrementa la cantidad de un item con los botones +/-"""
+        if 0 <= item_idx < len(self.carrito):
+            nueva = self.carrito[item_idx]['cantidad'] + delta
+            if nueva < 1:
+                return
+            label.setText(str(nueva))
+            self.cambiar_cantidad(item_idx, nueva)
+
     def cambiar_cantidad(self, item_idx, nueva_cantidad):
         """Cambia la cantidad de un item en el carrito"""
         # VALIDAR que haya apertura de caja antes de modificar carrito
@@ -615,7 +592,7 @@ class CajaTPVTab(QWidget):
         estado, data = self.caja_manager.verificar_necesita_apertura(fecha_hoy)
 
         if estado != 'ok':
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Apertura Requerida"),
                 tr("No se puede modificar el carrito sin apertura de caja.") + "\n\n"
@@ -637,7 +614,7 @@ class CajaTPVTab(QWidget):
                     stock_disponible = producto['stock']
 
                     if nueva_cantidad > stock_disponible:
-                        QMessageBox.warning(
+                        notify_warning(
                             self,
                             tr("Stock Insuficiente"),
                             f"{tr('Stock disponible')}: {stock_disponible}\n"
@@ -664,15 +641,8 @@ class CajaTPVTab(QWidget):
             item = self.carrito[item_idx]
 
             # Confirmar eliminación
-            respuesta = QMessageBox.question(
-                self,
-                tr("Eliminar Item"),
-                tr("¿Eliminar del carrito?") + f" '{item['nombre']}'",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-
-            if respuesta == QMessageBox.Yes:
+            if ask_confirm(self, tr("Eliminar Item"),
+                          tr("¿Eliminar del carrito?") + f" '{item['nombre']}'"):
                 # Eliminar del carrito
                 self.carrito.pop(item_idx)
                 self.actualizar_tabla_carrito()
@@ -712,12 +682,8 @@ class CajaTPVTab(QWidget):
     def limpiar_carrito(self):
         """Limpia todos los productos del carrito"""
         if self.carrito:
-            respuesta = QMessageBox.question(
-                self, tr("Limpiar Carrito"),
-                tr("¿Estás seguro de vaciar el carrito?"),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if respuesta == QMessageBox.Yes:
+            if ask_confirm(self, tr("Limpiar Carrito"),
+                          tr("¿Estás seguro de vaciar el carrito?")):
                 self.carrito = []
                 self.actualizar_tabla_carrito()
                 self.calcular_totales()
@@ -740,7 +706,7 @@ class CajaTPVTab(QWidget):
     def abrir_cobro(self):
         """Abre diálogo de cobro"""
         if not self.carrito:
-            QMessageBox.warning(self, tr("Carrito vacío"), tr("Añade productos antes de cobrar"))
+            notify_warning(self, tr("Carrito vacío"), tr("Añade productos antes de cobrar"))
             return
 
         from app.ui.tpv_cobro_dialog import TPVCobroDialog
@@ -799,7 +765,7 @@ class CajaTPVTab(QWidget):
                 if datos_cobro['imprimir']:
                     self.imprimir_ticket(numero_ticket)
 
-                QMessageBox.information(self, tr("Venta completada"),
+                notify_success(self, tr("Venta completada"),
                                       tr("Venta registrada correctamente") + f"\nTicket: {numero_ticket}")
 
                 # Limpiar carrito
@@ -812,10 +778,10 @@ class CajaTPVTab(QWidget):
                 self.actualizar_saldo_caja()
             else:
                 error_msg = error if error else tr("No se pudo completar la venta")
-                QMessageBox.critical(self, tr("Error"), error_msg)
+                notify_error(self, tr("Error"), error_msg)
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, tr("Error"), tr("Error al procesar venta") + f":\n{str(e)}")
+            notify_error(self, tr("Error"), tr("Error al procesar venta") + f":\n{str(e)}")
 
     def imprimir_ticket(self, numero_ticket):
         """Imprime el ticket de venta"""
@@ -830,7 +796,7 @@ class CajaTPVTab(QWidget):
 
             if not printer_name:
                 # Sin impresora: solo avisar
-                QMessageBox.warning(self, tr("Sin Impresora"),
+                notify_warning(self, tr("Sin Impresora"),
                     tr("No hay impresora de tickets configurada.") + "\n"
                     + tr("Ve a Ajustes > Impresoras para configurarla."))
                 return
@@ -842,14 +808,14 @@ class CajaTPVTab(QWidget):
             )
 
             if not venta:
-                QMessageBox.warning(self, tr("Error"), tr("No se encontró la venta con ticket") + f" {numero_ticket}")
+                notify_warning(self, tr("Error"), tr("No se encontró la venta con ticket") + f" {numero_ticket}")
                 return
 
             # Obtener los datos completos de la venta
             venta_completa = self.tpv_manager.obtener_venta(venta['id'])
 
             if not venta_completa:
-                QMessageBox.warning(self, tr("Error"), tr("No se pudieron obtener los datos de la venta"))
+                notify_warning(self, tr("Error"), tr("No se pudieron obtener los datos de la venta"))
                 return
 
             # Imprimir directamente a la impresora térmica
@@ -857,12 +823,12 @@ class CajaTPVTab(QWidget):
             exito, mensaje = ticket_printer.imprimir_a_impresora_windows(venta_completa, printer_name)
 
             if exito:
-                QMessageBox.information(self, tr("Impreso"), f"Ticket {numero_ticket} " + tr("enviado a") + f" {printer_name}")
+                notify_success(self, tr("Impreso"), f"Ticket {numero_ticket} " + tr("enviado a") + f" {printer_name}")
             else:
-                QMessageBox.warning(self, tr("Error"), mensaje)
+                notify_warning(self, tr("Error"), mensaje)
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.warning(self, tr("Error al imprimir"), tr("No se pudo imprimir") + f":\n{str(e)}")
+            notify_warning(self, tr("Error al imprimir"), tr("No se pudo imprimir") + f":\n{str(e)}")
 
     def actualizar_saldo_caja(self):
         """Actualiza el display del saldo de caja actual"""
@@ -870,16 +836,17 @@ class CajaTPVTab(QWidget):
             saldo = self.caja_manager.obtener_saldo_actual()
             self.saldo_caja_label.setText(f"{saldo:.2f} €")
 
-            # Cambiar color según el saldo
+            # Cambiar color según el saldo (constantes Nord)
+            base_style = "font-family: 'Segoe UI', Arial, sans-serif; font-weight: bold;"
             if saldo < 0:
-                self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #e74c3c; font-weight: bold;")
+                self.saldo_caja_label.setStyleSheet(f"{base_style} color: {COLOR_DANGER};")
             elif saldo < 100:
-                self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #f39c12; font-weight: bold;")
+                self.saldo_caja_label.setStyleSheet(f"{base_style} color: {COLOR_WARNING};")
             else:
-                self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #4ec9b0; font-weight: bold;")
+                self.saldo_caja_label.setStyleSheet(f"{base_style} color: {COLOR_ACCENT};")
         except (OSError, ValueError, RuntimeError) as e:
             self.saldo_caja_label.setText("Error")
-            self.saldo_caja_label.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #e74c3c;")
+            self.saldo_caja_label.setStyleSheet(f"font-family: 'Segoe UI', Arial, sans-serif; color: {COLOR_DANGER};")
 
     def cargar_favoritos(self):
         """Carga los productos favoritos en grid de 4 columnas con validación de stock"""
@@ -933,15 +900,15 @@ class CajaTPVTab(QWidget):
                 # Sin stock: gris oscuro con borde rojo
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        background-color: #5a5a5a;
-                        color: #cccccc;
-                        border: 2px solid #e74c3c;
+                        background-color: #434C5E;
+                        color: #D8DEE9;
+                        border: 2px solid #BF616A;
                         border-radius: 8px;
                         text-align: center;
                         padding: 8px;
                     }}
                     QPushButton:hover {{
-                        background-color: #6a6a6a;
+                        background-color: #4C566A;
                     }}
                 """)
                 # Aún permitir clic (mostrará error al añadir)
@@ -950,30 +917,31 @@ class CajaTPVTab(QWidget):
                 # Stock bajo: naranja
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        background-color: #e67e22;
+                        background-color: #D08770;
                         color: white;
-                        border: 2px solid #d35400;
+                        border: 2px solid #BF6B50;
                         border-radius: 8px;
                         text-align: center;
                         padding: 8px;
                     }}
                     QPushButton:hover {{
-                        background-color: #d35400;
+                        background-color: #BF6B50;
                     }}
                 """)
             else:
                 # Stock normal o producto manual: color original
-                color = fav.get('color', '#3498db')
+                color = fav.get('color', COLOR_PRIMARY)
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: {color};
                         color: white;
+                        border: 2px solid transparent;
                         border-radius: 8px;
                         text-align: center;
                         padding: 8px;
                     }}
                     QPushButton:hover {{
-                        opacity: 0.8;
+                        border: 2px solid #ECEFF4;
                     }}
                 """)
 
@@ -1014,7 +982,7 @@ class CajaTPVTab(QWidget):
         # CASO 1: Cierre pendiente de día anterior
         if estado == 'cierre_pendiente':
             fecha_pendiente = datos_cobro.get('fecha_pendiente', tr('anterior'))
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Cierre de Caja Pendiente"),
                 tr("Hay una caja del día") + f" {fecha_pendiente} " + tr("sin cerrar.") + "\n\n"
@@ -1026,7 +994,7 @@ class CajaTPVTab(QWidget):
 
         # CASO 2: Caja de hoy ya cerrada - necesita reapertura
         if estado == 'reapertura_requerida':
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Caja Ya Cerrada"),
                 tr("La caja de hoy ya fue cerrada.") + "\n\n"
@@ -1038,7 +1006,7 @@ class CajaTPVTab(QWidget):
 
         # CASO 3: Caja de hoy no abierta - necesita apertura
         if estado in ['apertura_requerida', 'apertura_nueva_dia']:
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Apertura de Caja Requerida"),
                 tr("La caja de hoy no está abierta.") + "\n\n"
@@ -1049,7 +1017,7 @@ class CajaTPVTab(QWidget):
             return
 
         # Si llegamos aquí con otro estado no manejado, mostrar error genérico
-        QMessageBox.warning(
+        notify_warning(
             self,
             tr("Error de Caja"),
             tr("No se puede procesar la venta.") + "\n"
