@@ -4,7 +4,13 @@ Módulo de derivación de secreto para el sistema de licencias
 El secreto se almacena cifrado con DPAPI (Windows) vinculado al PC.
 En la primera ejecución se genera y cifra automáticamente.
 
-ADVERTENCIA: Cambiar este algoritmo INVALIDARÁ todas las licencias existentes.
+Derivación: PBKDF2-HMAC-SHA256 con 600.000 iteraciones.
+El resultado se almacena en DPAPI tras la primera derivación, por lo que
+las iteraciones solo se ejecutan una vez por instalación.
+
+ADVERTENCIA: Cambiar los parámetros de derivación (password, salt, iteraciones)
+INVALIDARÁ todas las licencias de instalaciones nuevas. Las instalaciones
+existentes conservan el secreto en su archivo DPAPI y no se ven afectadas.
 """
 import os
 import hashlib
@@ -46,17 +52,27 @@ def _descifrar_con_dpapi(datos_cifrados):
 
 def _derivar_componentes():
     """
-    Deriva los componentes del secreto.
-    Solo se usa una vez para migración inicial.
-    """
-    _c1 = base64.b64decode(b'UmVkTW92aWxQT1M=').decode()
-    _c2 = base64.b64decode(b'MjAyNA==').decode()
-    _c3 = base64.b64decode(b'TGljZW5zZUtleQ==').decode()
-    _c4 = base64.b64decode(b'U2VjcmV0').decode()
-    _c5 = base64.b64decode(b'U2FsdA==').decode()
-    _c6 = base64.b64decode(b'WDlLMg==').decode()
+    Deriva el secreto de licencia usando PBKDF2-HMAC-SHA256.
+    Se ejecuta una sola vez por instalación (resultado cacheado en DPAPI).
 
-    return f"{_c1}_{_c2}_{_c3}_{_c4}_{_c5}_{_c6}"
+    Parámetros de derivación:
+    - Password: clave interna fija
+    - Salt: valor fijo de 16 bytes
+    - Iteraciones: 600.000 (recomendación OWASP 2024 para SHA-256)
+    - Longitud de salida: 36 bytes → codificado en base64url
+    """
+    _password = b'rmp_license_derivation_v2_2026'
+    _salt = bytes.fromhex(
+        'a4c7e2f19b3d58061f8e4a2c7d9b0e53'
+    )
+    derived = hashlib.pbkdf2_hmac(
+        'sha256',
+        _password,
+        _salt,
+        iterations=600_000,
+        dklen=36
+    )
+    return base64.urlsafe_b64encode(derived).decode('ascii')
 
 
 def _guardar_secreto_cifrado(secreto):
@@ -133,6 +149,30 @@ def generar_hash_licencia(machine_id: str) -> str:
     """
     machine_id = machine_id.strip().upper()
     secret = obtener_secreto_licencia()
+
+    data = f"{machine_id}|{secret}"
+    hash_bytes = hashlib.sha256(data.encode()).digest()
+
+    hex_str = hash_bytes.hex()[:16].upper()
+    key = f"{hex_str[:4]}-{hex_str[4:8]}-{hex_str[8:12]}-{hex_str[12:16]}"
+
+    return key
+
+
+def generar_hash_licencia_keygen(machine_id: str) -> str:
+    """
+    Genera la clave de licencia usando siempre PBKDF2 fresco (sin cache DPAPI).
+    Usar exclusivamente en el keygen para garantizar compatibilidad con
+    instalaciones nuevas independientemente del estado del PC del desarrollador.
+
+    Args:
+        machine_id: ID de máquina (formato: RMPV-XXXX-XXXX-XXXX-XXXX)
+
+    Returns:
+        str: Clave de licencia (formato: XXXX-XXXX-XXXX-XXXX)
+    """
+    machine_id = machine_id.strip().upper()
+    secret = _derivar_componentes()
 
     data = f"{machine_id}|{secret}"
     hash_bytes = hashlib.sha256(data.encode()).digest()

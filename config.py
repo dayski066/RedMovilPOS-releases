@@ -3,7 +3,7 @@ import os
 from app_paths import DB_PATH, PDF_DIR, LOGOS_DIR, APP_DATA_DIR
 
 # Versión de la aplicación
-APP_VERSION = "5.0.1"
+APP_VERSION = "5.0.2"
 APP_NAME = "RedMovilPOS"
 
 # Configuración de la base de datos SQLite
