@@ -2,7 +2,7 @@
 Generador de códigos QR para REDMOVILPOS
 Crea QR codes para órdenes de reparación SAT
 """
-import sqlite3
+# sqlite3 no se usa en este módulo
 import qrcode
 import io
 from PIL import Image
@@ -111,7 +111,7 @@ class QRGenerator:
             img = self.generar_imagen_qr(numero_orden, size)
             img.save(filepath)
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except OSError as e:
             logger.error(f"Error guardando QR: {e}")
             return False
 

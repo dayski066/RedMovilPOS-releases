@@ -25,7 +25,7 @@ class ProductoManager:
             if config:
                 return str(int(config['valor'])).zfill(13)
             return "1000000000001"
-        except (sqlite3.Error, OSError, ValueError):
+        except sqlite3.Error:
             self.db.rollback()
             return "1000000000001"
 
@@ -186,6 +186,38 @@ class ProductoManager:
         query += " ORDER BY p.descripcion"
 
         return self.db.fetch_all(query, params if params else None)
+
+    def buscar_productos_paginado(self, filtro=None, categoria_id=None, limit=50, offset=0):
+        """Busca productos con paginación. Retorna (productos, total_count)"""
+        base_from = """
+            FROM productos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            LEFT JOIN marcas ma ON p.marca_id = ma.id
+            LEFT JOIN modelos mo ON p.modelo_id = mo.id
+            WHERE p.activo = 1
+        """
+        where_extra = ""
+        params = []
+
+        if filtro:
+            where_extra += " AND (p.descripcion LIKE ? OR p.codigo_ean LIKE ? OR p.imei LIKE ?)"
+            params.extend([f"%{filtro}%", f"%{filtro}%", f"%{filtro}%"])
+
+        if categoria_id:
+            where_extra += " AND p.categoria_id = ?"
+            params.append(categoria_id)
+
+        # Count
+        count_query = f"SELECT COUNT(*) as total {base_from}{where_extra}"
+        count_result = self.db.fetch_one(count_query, params if params else None)
+        total = count_result['total'] if count_result else 0
+
+        # Data
+        data_query = f"SELECT p.*, c.nombre as categoria_nombre, ma.nombre as marca_nombre, mo.nombre as modelo_nombre {base_from}{where_extra} ORDER BY p.descripcion LIMIT ? OFFSET ?"
+        data_params = (params + [limit, offset]) if params else [limit, offset]
+        productos = self.db.fetch_all(data_query, data_params)
+
+        return productos, total
 
     def obtener_producto(self, producto_id):
         """Obtiene un producto por ID"""

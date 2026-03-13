@@ -413,7 +413,7 @@ class AuthManager:
             return []
 
         return self.db.fetch_all(
-            "SELECT id, username, nombre_completo, rol, establecimiento_id, activo, fecha_creacion, ultimo_acceso FROM usuarios ORDER BY username"
+            "SELECT id, username, nombre_completo, rol, establecimiento_id, activo, fecha_creacion, ultimo_acceso, totp_habilitado FROM usuarios ORDER BY username"
         )
 
     def crear_usuario(self, username, password, nombre_completo, rol='usuario', establecimiento_id=None):
@@ -605,3 +605,149 @@ class AuthManager:
         if result is not None:
             return True, "Contraseña actualizada correctamente. Ya puedes iniciar sesión."
         return False, "Error al actualizar contraseña"
+
+    # ═══════════════════════════════════════════════════════════════
+    # TOTP 2FA (Autenticación en Dos Pasos)
+    # ═══════════════════════════════════════════════════════════════
+
+    def _get_crypto_manager(self):
+        """Obtiene una instancia de CryptoManager para cifrar/descifrar secretos TOTP"""
+        from app.modules.crypto_manager import CryptoManager
+        return CryptoManager(self.db)
+
+    def tiene_totp(self, usuario_id: int) -> bool:
+        """Comprueba si el usuario tiene 2FA activado"""
+        usuario = self.db.fetch_one(
+            "SELECT totp_habilitado FROM usuarios WHERE id = ?",
+            (usuario_id,)
+        )
+        return bool(usuario and usuario.get('totp_habilitado'))
+
+    def generar_totp_secret(self, usuario_id: int) -> tuple:
+        """
+        Genera un secreto TOTP y lo guarda cifrado en la BD.
+        No activa 2FA todavía (se activa al verificar el primer código).
+
+        Returns:
+            tuple: (exito, secret_plaintext, provisioning_uri) o (False, None, mensaje_error)
+        """
+        import pyotp
+
+        usuario = self.db.fetch_one(
+            "SELECT username FROM usuarios WHERE id = ?",
+            (usuario_id,)
+        )
+        if not usuario:
+            return False, None, tr("Usuario no encontrado")
+
+        secret = pyotp.random_base32()
+
+        # Cifrar el secreto antes de guardar
+        try:
+            crypto = self._get_crypto_manager()
+            secret_cifrado = crypto.encriptar(secret)
+        except Exception as e:
+            logger.error(f"Error al cifrar secreto TOTP: {e}")
+            return False, None, tr("Error al generar secreto 2FA")
+
+        # Guardar secreto cifrado (sin activar todavía)
+        result = self.db.execute_query(
+            "UPDATE usuarios SET totp_secret = ?, totp_habilitado = 0 WHERE id = ?",
+            (secret_cifrado, usuario_id)
+        )
+
+        if result is None:
+            return False, None, tr("Error al guardar secreto 2FA")
+
+        # Generar URI para el QR
+        totp = pyotp.TOTP(secret)
+        provisioning_uri = totp.provisioning_uri(
+            name=usuario['username'],
+            issuer_name="RedMovilPOS"
+        )
+
+        logger.info(f"Secreto TOTP generado para usuario {usuario_id}")
+        return True, secret, provisioning_uri
+
+    def activar_totp(self, usuario_id: int, codigo_otp: str) -> tuple:
+        """
+        Verifica el primer código OTP y activa 2FA si es correcto.
+
+        Returns:
+            tuple: (exito, mensaje)
+        """
+        import pyotp
+
+        usuario = self.db.fetch_one(
+            "SELECT totp_secret FROM usuarios WHERE id = ?",
+            (usuario_id,)
+        )
+        if not usuario or not usuario.get('totp_secret'):
+            return False, tr("No hay secreto 2FA configurado")
+
+        # Descifrar secreto
+        try:
+            crypto = self._get_crypto_manager()
+            secret = crypto.desencriptar(usuario['totp_secret'])
+        except Exception as e:
+            logger.error(f"Error al descifrar secreto TOTP: {e}")
+            return False, tr("Error al verificar código")
+
+        if not secret:
+            return False, tr("Error al descifrar secreto 2FA")
+
+        # Verificar código
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(codigo_otp, valid_window=1):
+            return False, tr("Código incorrecto. Inténtalo de nuevo.")
+
+        # Activar 2FA
+        result = self.db.execute_query(
+            "UPDATE usuarios SET totp_habilitado = 1 WHERE id = ?",
+            (usuario_id,)
+        )
+
+        if result is None:
+            return False, tr("Error al activar 2FA")
+
+        logger.info(f"TOTP 2FA activado para usuario {usuario_id}")
+        return True, tr("Autenticación en dos pasos activada correctamente")
+
+    def verificar_totp(self, usuario_id: int, codigo_otp: str) -> bool:
+        """
+        Verifica un código TOTP durante el login.
+        valid_window=1 permite códigos del periodo anterior/siguiente (tolerancia +-30s).
+        """
+        import pyotp
+
+        usuario = self.db.fetch_one(
+            "SELECT totp_secret, totp_habilitado FROM usuarios WHERE id = ?",
+            (usuario_id,)
+        )
+        if not usuario or not usuario.get('totp_habilitado') or not usuario.get('totp_secret'):
+            return False
+
+        try:
+            crypto = self._get_crypto_manager()
+            secret = crypto.desencriptar(usuario['totp_secret'])
+        except Exception as e:
+            logger.error(f"Error al descifrar secreto TOTP para login: {e}")
+            return False
+
+        if not secret:
+            return False
+
+        totp = pyotp.TOTP(secret)
+        return totp.verify(codigo_otp, valid_window=1)
+
+    def desactivar_totp(self, usuario_id: int) -> tuple:
+        """Desactiva 2FA y borra el secreto"""
+        result = self.db.execute_query(
+            "UPDATE usuarios SET totp_secret = NULL, totp_habilitado = 0 WHERE id = ?",
+            (usuario_id,)
+        )
+        if result is None:
+            return False, tr("Error al desactivar 2FA")
+
+        logger.info(f"TOTP 2FA desactivado para usuario {usuario_id}")
+        return True, tr("Autenticación en dos pasos desactivada")

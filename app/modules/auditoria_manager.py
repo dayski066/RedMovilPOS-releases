@@ -46,7 +46,7 @@ class AuditoriaManager:
             """, (usuario_id, tipo_operacion, tabla, registro_id, descripcion, datos_ant_json, datos_new_json))
             
             return historial_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error registrando operación: {e}")
             return None
     

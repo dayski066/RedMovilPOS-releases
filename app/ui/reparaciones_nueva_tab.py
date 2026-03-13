@@ -4,15 +4,19 @@ Pestaña para nueva reparación (SAT)
 from app.ui.styles import estilizar_btn_eliminar, THEMES
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QTableWidget, QTableWidgetItem, QGroupBox,
-                             QDateEdit, QMessageBox, QHeaderView, QComboBox, QApplication)
+                             QDateEdit, QHeaderView, QComboBox, QApplication)
 from config import IVA_RATE, calcular_desglose_iva
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QFont
+from app.utils.notify import notify_success, notify_error, notify_warning, ask_confirm
 from app.db.database import Database
 from app.i18n import tr
 from app.modules.reparacion_manager import ReparacionManager
 from app.ui.reparacion_item_dialog import ReparacionItemDialog
 from app.utils.logger import logger
+from app.ui.transparent_buttons import apply_btn_primary, apply_btn_cancel, apply_btn_success, set_btn_icon
+from qfluentwidgets import FluentIcon
+from qfluentwidgets import SearchLineEdit
 
 
 class ReparacionesNuevaTab(QWidget):
@@ -40,8 +44,8 @@ class ReparacionesNuevaTab(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 5, 8, 5)
-        layout.setSpacing(4)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
 
         # Header
         header_layout = QHBoxLayout()
@@ -51,7 +55,8 @@ class ReparacionesNuevaTab(QWidget):
         lbl_num.setStyleSheet("font-weight: bold;")
         self.numero_input = QLineEdit()
         self.numero_input.setReadOnly(True)
-        self.numero_input.setMaximumWidth(100)
+        self.numero_input.setMaximumWidth(150)
+        self.numero_input.setStyleSheet("color: #ffffff; font-weight: bold;")
 
         lbl_fecha = QLabel(tr("Fecha Entrada") + ":")
         self.fecha_input = QDateEdit()
@@ -73,37 +78,46 @@ class ReparacionesNuevaTab(QWidget):
         layout.addWidget(cliente_title)
 
         cliente_group = QGroupBox()
+        cliente_group.setObjectName("cardGroup")
         cliente_layout = QVBoxLayout()
-        cliente_layout.setContentsMargins(8, 6, 8, 6)
-        cliente_layout.setSpacing(4)
+        cliente_layout.setContentsMargins(15, 15, 15, 15)
+        cliente_layout.setSpacing(10)
 
         # Búsqueda rápida por DNI o Teléfono
         busqueda_layout = QHBoxLayout()
+        busqueda_layout.setAlignment(Qt.AlignVCenter)
         busqueda_layout.addWidget(QLabel(tr("Buscar por DNI/Teléfono") + ":"))
-        self.busqueda_cliente_input = QLineEdit()
+        self.busqueda_cliente_input = SearchLineEdit()
+        self.busqueda_cliente_input.setFixedHeight(36)
         self.busqueda_cliente_input.setPlaceholderText(tr("Introduce DNI o Teléfono y pulsa Enter"))
         self.busqueda_cliente_input.returnPressed.connect(self.buscar_cliente_auto)
         busqueda_layout.addWidget(self.busqueda_cliente_input)
 
-        btn_buscar_cliente = QPushButton("🔍 " + tr("Buscar"))
+        btn_buscar_cliente = QPushButton(tr("Buscar"))
         btn_buscar_cliente.clicked.connect(self.buscar_cliente_auto)
-        btn_buscar_cliente.setStyleSheet("background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; border-radius: 6px;")
+        apply_btn_primary(btn_buscar_cliente)
+        set_btn_icon(btn_buscar_cliente, FluentIcon.SEARCH, color="#5E81AC")
+        btn_buscar_cliente.setFixedHeight(36)
         btn_buscar_cliente.setMaximumWidth(100)
         busqueda_layout.addWidget(btn_buscar_cliente)
         cliente_layout.addLayout(busqueda_layout)
 
         # Selector de cliente existente
         selector_layout = QHBoxLayout()
+        selector_layout.setAlignment(Qt.AlignVCenter)
         selector_layout.addWidget(QLabel(tr("O seleccionar") + ":"))
         self.cliente_combo = QComboBox()
         self.cliente_combo.setEditable(True)
+        self.cliente_combo.setFixedHeight(36)
         self.cliente_combo.currentIndexChanged.connect(self.on_cliente_selected)
         selector_layout.addWidget(self.cliente_combo)
 
-        btn_nuevo_cliente = QPushButton("+ " + tr("Nuevo Cliente"))
+        btn_nuevo_cliente = QPushButton(tr("Nuevo Cliente"))
         btn_nuevo_cliente.clicked.connect(self.abrir_nuevo_cliente)
+        btn_nuevo_cliente.setFixedHeight(36)
         btn_nuevo_cliente.setMaximumWidth(150)
-        btn_nuevo_cliente.setStyleSheet("background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C; border-radius: 6px;")
+        apply_btn_success(btn_nuevo_cliente)
+        set_btn_icon(btn_nuevo_cliente, FluentIcon.ADD, color="#A3BE8C")
         selector_layout.addWidget(btn_nuevo_cliente)
         cliente_layout.addLayout(selector_layout)
 
@@ -158,6 +172,13 @@ class ReparacionesNuevaTab(QWidget):
         self.ciudad_input.setReadOnly(True)
         self.ciudad_input.setStyleSheet(readonly_style)
         right_col.addWidget(self.ciudad_input)
+        lbl_provincia = QLabel(tr("Provincia:"))
+        lbl_provincia.setStyleSheet(label_style)
+        right_col.addWidget(lbl_provincia)
+        self.provincia_input = QLineEdit()
+        self.provincia_input.setReadOnly(True)
+        self.provincia_input.setStyleSheet(readonly_style)
+        right_col.addWidget(self.provincia_input)
         lbl4 = QLabel(tr("Teléfono") + ":")
         lbl4.setStyleSheet(label_style)
         right_col.addWidget(lbl4)
@@ -214,15 +235,15 @@ class ReparacionesNuevaTab(QWidget):
 
         # Totales compactos en línea
         self.lbl_subtotal = QLabel(tr("Subtotal") + ": 0.00 €")
-        self.lbl_subtotal.setStyleSheet("font-size: 11px; color: #aaa; padding: 0 8px;")
+        self.lbl_subtotal.setStyleSheet("font-size: 11px; color: #7B88A0; padding: 0 8px;")
         btn_items_layout.addWidget(self.lbl_subtotal)
 
         self.lbl_iva = QLabel(f"{tr('IVA')} ({int(IVA_RATE*100)}%): 0.00 €")
-        self.lbl_iva.setStyleSheet("font-size: 11px; color: #aaa; padding: 0 8px;")
+        self.lbl_iva.setStyleSheet("font-size: 11px; color: #7B88A0; padding: 0 8px;")
         btn_items_layout.addWidget(self.lbl_iva)
 
         self.lbl_total = QLabel(tr("Total") + ": 0.00 €")
-        self.lbl_total.setStyleSheet("font-weight: bold; font-size: 14px; color: #e74c3c; padding: 0 8px;")
+        self.lbl_total.setStyleSheet("font-weight: bold; font-size: 14px; color: #BF616A; padding: 0 8px;")
         btn_items_layout.addWidget(self.lbl_total)
 
         layout.addLayout(btn_items_layout)
@@ -230,11 +251,11 @@ class ReparacionesNuevaTab(QWidget):
         # Footer Botones (compactos)
         footer = QHBoxLayout()
         btn_limpiar = QPushButton(tr("Limpiar"))
-        btn_limpiar.setStyleSheet("background-color: transparent; color: #5E6B7D; border: 2px solid #5E6B7D; border-radius: 6px; padding: 6px 15px;")
+        apply_btn_cancel(btn_limpiar)
         btn_limpiar.clicked.connect(self.limpiar)
 
         btn_guardar = QPushButton(tr("Guardar Orden"))
-        btn_guardar.setStyleSheet("background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; border-radius: 6px; font-weight: bold; padding: 8px 20px; font-size: 12px;")
+        apply_btn_primary(btn_guardar)
         btn_guardar.clicked.connect(self.guardar)
 
         footer.addStretch()
@@ -260,7 +281,7 @@ class ReparacionesNuevaTab(QWidget):
                 self.telefono_input.setText(cliente['telefono'] or "")
                 self.cp_input.setText(cliente.get('codigo_postal') or "")
                 self.ciudad_input.setText(cliente.get('ciudad') or "")
-                self.busqueda_cliente_input.setStyleSheet("")
+                self.provincia_input.setText(cliente.get('provincia') or "")
 
     def buscar_cliente_auto(self):
         """Busca cliente automáticamente por DNI o Teléfono"""
@@ -279,24 +300,18 @@ class ReparacionesNuevaTab(QWidget):
             self.telefono_input.setText(cliente['telefono'] or "")
             self.cp_input.setText(cliente.get('codigo_postal') or "")
             self.ciudad_input.setText(cliente.get('ciudad') or "")
+            self.provincia_input.setText(cliente.get('provincia') or "")
 
             index = self.cliente_combo.findData(cliente['id'])
             if index >= 0: self.cliente_combo.setCurrentIndex(index)
 
-            self.busqueda_cliente_input.setStyleSheet("background-color: transparent; color: #88C0D0; border: 2px solid #88C0D0; border-radius: 6px;")
-            QMessageBox.information(self, "✓ " + tr("Cliente Encontrado"), tr("Cliente") + f": {cliente['nombre']}")
+            notify_success(self, "✓ " + tr("Cliente Encontrado"), tr("Cliente") + f": {cliente['nombre']}")
         else:
-            self.busqueda_cliente_input.setStyleSheet("background-color: transparent; color: #88C0D0; border: 2px solid #88C0D0; border-radius: 6px;")
-            respuesta = QMessageBox.question(
-                self, tr("Cliente No Encontrado"),
-                tr("No se encontró ningún cliente con DNI/Teléfono") + f": {busqueda}\n" + tr("¿Desea crear un nuevo cliente?"),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if respuesta == QMessageBox.Yes:
+            respuesta = ask_confirm(self, tr("Cliente No Encontrado"), tr("No se encontró ningún cliente con DNI/Teléfono") + f": {busqueda}\n" + tr("¿Desea crear un nuevo cliente?"))
+            if respuesta:
                 # Abrir formulario de nuevo cliente
                 self.abrir_nuevo_cliente()
                 self.busqueda_cliente_input.clear()
-                self.busqueda_cliente_input.setStyleSheet("")
 
     def abrir_nuevo_cliente(self):
         from app.ui.cliente_dialog import ClienteDialog
@@ -362,7 +377,7 @@ class ReparacionesNuevaTab(QWidget):
             # Columna 6: Botón eliminar - Centrado estructural
             container = QWidget()
             v_layout = QVBoxLayout(container)
-            v_layout.setContentsMargins(0, 0, 0, 10)
+            v_layout.setContentsMargins(8, 0, 8, 10)
             v_layout.setAlignment(Qt.AlignCenter)
 
             btn_del = QPushButton()
@@ -398,18 +413,20 @@ class ReparacionesNuevaTab(QWidget):
         self.telefono_input.clear()
         self.nif_input.clear()
         self.direccion_input.clear()
+        self.cp_input.clear()
+        self.ciudad_input.clear()
+        self.provincia_input.clear()
         self.cliente_combo.setCurrentIndex(0)
         self.cargar_numero()
         self.busqueda_cliente_input.clear()
-        self.busqueda_cliente_input.setStyleSheet("")
 
     def guardar(self):
         try:
             if not self.nombre_input.text():
-                QMessageBox.warning(self, tr("Error"), tr("Debe ingresar el nombre del cliente"))
+                notify_warning(self, tr("Error"), tr("Debe ingresar el nombre del cliente"))
                 return
             if not self.items:
-                QMessageBox.warning(self, tr("Error"), tr("Añade al menos un dispositivo"))
+                notify_warning(self, tr("Error"), tr("Añade al menos un dispositivo"))
                 return
 
             datos = {
@@ -422,7 +439,8 @@ class ReparacionesNuevaTab(QWidget):
                     'nif': self.nif_input.text(),
                     'direccion': self.direccion_input.text(),
                     'codigo_postal': self.cp_input.text(),
-                    'ciudad': self.ciudad_input.text()
+                    'ciudad': self.ciudad_input.text(),
+                    'provincia': self.provincia_input.text()
                 },
                 'items': self.items
             }
@@ -446,7 +464,7 @@ class ReparacionesNuevaTab(QWidget):
                 printer_name = result['valor'] if result and result['valor'] and '---' not in result['valor'] else None
 
                 if not printer_name:
-                    QMessageBox.warning(self, tr("Sin Impresora"),
+                    notify_warning(self, tr("Sin Impresora"),
                         tr("No hay impresora general configurada.") + "\n" +
                         tr("Ve a Ajustes > Impresoras para configurarla."))
                     return
@@ -485,21 +503,21 @@ class ReparacionesNuevaTab(QWidget):
                     reparacion_id = self.reparacion_manager.guardar_reparacion(datos, usuario_id=usuario_id)
 
                     if not reparacion_id:
-                        QMessageBox.critical(self, tr("Error"), tr("No se pudo guardar la orden"))
+                        notify_error(self, tr("Error"), tr("No se pudo guardar la orden"))
                         return
 
-                    QMessageBox.information(self, tr("Orden Guardada"),
+                    notify_success(self, tr("Orden Guardada"),
                         tr("¡Orden guardada con éxito!"))
 
                     self.limpiar()
 
                 except (OSError, ValueError, RuntimeError) as e:
-                    QMessageBox.critical(self, tr("Error"), tr("Error al guardar") + f":\n{str(e)}")
+                    notify_error(self, tr("Error"), tr("Error al guardar") + f":\n{str(e)}")
 
         except (OSError, ValueError, RuntimeError) as e:
             import traceback
             error_completo = traceback.format_exc()
-            QMessageBox.critical(self, tr("Error"), tr("Error al guardar") + f":\n\n{str(e)}")
+            notify_error(self, tr("Error"), tr("Error al guardar") + f":\n\n{str(e)}")
             logger.error(f"Error guardando reparación:\n{error_completo}")
 
     def closeEvent(self, event):

@@ -26,7 +26,7 @@ class MarcaModeloManager:
                 (nombre.strip(),)
             )
             return marca_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al crear marca: {e}")
             return None
 
@@ -38,7 +38,7 @@ class MarcaModeloManager:
                 (nombre.strip(), marca_id)
             )
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al actualizar marca: {e}")
             return False
 
@@ -57,7 +57,7 @@ class MarcaModeloManager:
             # Eliminar marca (los modelos se eliminan automáticamente por CASCADE)
             self.db.execute_query("DELETE FROM marcas WHERE id = ?", (marca_id,))
             return True, "Marca eliminada correctamente"
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             return False, f"Error al eliminar marca: {str(e)}"
 
     # ==================== MODELOS ====================
@@ -100,7 +100,7 @@ class MarcaModeloManager:
                 (nombre.strip(), marca_id)
             )
             return modelo_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al crear modelo: {e}")
             return None
 
@@ -112,7 +112,7 @@ class MarcaModeloManager:
                 (nombre.strip(), marca_id, modelo_id)
             )
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al actualizar modelo: {e}")
             return False
 
@@ -131,5 +131,5 @@ class MarcaModeloManager:
             # Eliminar modelo
             self.db.execute_query("DELETE FROM modelos WHERE id = ?", (modelo_id,))
             return True, "Modelo eliminado correctamente"
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             return False, f"Error al eliminar modelo: {str(e)}"

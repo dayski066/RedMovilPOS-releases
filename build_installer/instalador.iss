@@ -6,7 +6,7 @@
 ; ============================================================
 
 #define MyAppName "RedMovilPOS"
-#define MyAppVersion "5.0.2"
+#define MyAppVersion "5.0.3"
 #define MyAppPublisher "RABI EL-OUAHIDI Y OTROS ESPJ"
 #define MyAppExeName "RedMovilPOS.exe"
 

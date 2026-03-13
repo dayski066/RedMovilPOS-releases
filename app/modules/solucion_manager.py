@@ -16,7 +16,7 @@ class SolucionManager:
                 (averia_id, nombre, descripcion)
             )
             return solucion_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error creando solución: {e}")
             return None
 
@@ -44,7 +44,7 @@ class SolucionManager:
                 (nombre, descripcion, solucion_id)
             )
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error actualizando solución: {e}")
             return False
 
@@ -72,7 +72,7 @@ class SolucionManager:
                 )
                 return True, "Solución eliminada correctamente"
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error eliminando solución: {e}")
             return False, f"Error: {str(e)}"
 

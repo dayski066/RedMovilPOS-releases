@@ -3,11 +3,12 @@ Ventana principal de la aplicación con navegación por sidebar
 Incluye verificación automática de sesión y registro de actividad
 """
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QPushButton, QTabWidget, QLabel, QMessageBox, QStackedWidget,
-                             QSizePolicy, QFrame, QMenu, QAction, QActionGroup, QApplication,
-                             QSystemTrayIcon, QToolButton, QScrollArea)
+                             QPushButton, QTabWidget, QLabel, QStackedWidget,
+                             QScrollArea, QMenu, QAction, QActionGroup, QApplication)
+from qfluentwidgets import FluentIcon
+from app.utils.notify import notify_success, notify_error, notify_warning, notify_info, ask_confirm
 from PyQt5.QtCore import Qt, QSize, QTimer
-from PyQt5.QtGui import QFont, QPalette, QColor
+from PyQt5.QtGui import QFont, QColor
 from app.ui.factura_tab_mejorada import FacturaTabMejorada
 from app.ui.clientes_tab import ClientesTab
 from app.ui.productos_tab_nuevo import ProductosTabNuevo
@@ -26,7 +27,7 @@ from app.ui.caja_historial_tab import CajaHistorialTab
 from app.ui.caja_tpv_tab import CajaTPVTab
 from app.ui.caja_devoluciones_tab import CajaDevolucionesTab
 from app.ui.caja_devoluciones_tab import CajaDevolucionesTab
-from app.ui.styles import app_icon, apply_theme, get_icon_color, THEMES, NORD0, NORD8
+from app.ui.styles import app_icon, apply_theme
 from app.db.database import Database
 from app.modules.caja_manager import CajaManager
 from config import APP_VERSION, APP_NAME
@@ -51,10 +52,10 @@ class MainWindow(QMainWindow):
 
         nombre_empresa = self.company_info['name'] or APP_NAME
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} - {nombre_empresa} - {self.usuario['nombre_completo']}")
-        self.setGeometry(50, 50, 1280, 1000)
-        self.setMinimumSize(1280, 1000)
+        self.setMinimumSize(1024, 700)
         self.setup_ui()
         self.apply_styles()
+        self.showMaximized()
 
         # Timer para verificar sesión cada 5 minutos
         self.session_timer = QTimer(self)
@@ -116,13 +117,12 @@ class MainWindow(QMainWindow):
 
             if apertura_pendiente and apertura_pendiente['fecha'] != fecha_hoy:
                 fecha_pendiente = apertura_pendiente['fecha']
-                QMessageBox.warning(
+                notify_warning(
                     self,
                     tr("Cierre de Caja Pendiente"),
-                    tr("Hay una caja del día") + f" {fecha_pendiente} " + tr("sin cerrar.") + "\n\n" +
-                    tr("Debe cerrar esa caja antes de continuar.") + "\n\n" +
-                    "👉 " + tr("Vaya a") + ": " + tr("Caja") + " → " + tr("Movimientos") + "\n" +
-                    "👉 " + tr("Use el botón") + " 🔒 " + tr("Cerrar Caja")
+                    tr("Hay una caja del día") + f" {fecha_pendiente} " + tr("sin cerrar.") + "\n" +
+                    tr("Debe cerrar esa caja antes de continuar."),
+                    duration=8000
                 )
 
             db.disconnect()
@@ -152,32 +152,20 @@ class MainWindow(QMainWindow):
                 dialog = UpdateDialog(update_info, self)
                 dialog.exec_()
             else:
-                QMessageBox.information(
-                    self,
-                    tr("Actualización"),
-                    tr("Ya tienes la última versión.") + f"\n\n{tr('Versión actual')}: {APP_VERSION}",
-                    QMessageBox.Ok
-                )
+                notify_info(self, tr("Actualización"),
+                    tr("Ya tienes la última versión.") + f"\n{tr('Versión actual')}: {APP_VERSION}")
         except (OSError, ValueError, RuntimeError) as e:
             progress.close()
-            QMessageBox.warning(
-                self,
-                tr("Error"),
-                tr("No se pudo comprobar actualizaciones.") + f"\n\n{str(e)}",
-                QMessageBox.Ok
-            )
+            notify_error(self, tr("Error"),
+                tr("No se pudo comprobar actualizaciones.") + f"\n{str(e)}")
 
     def _verificar_sesion(self):
         """Verifica si la sesión sigue activa, si no, cierra la aplicación"""
         if not self.auth_manager.verificar_sesion_activa():
             self.session_timer.stop()
-            QMessageBox.warning(
-                self,
-                tr("Sesión Expirada"),
+            notify_warning(self, tr("Sesión Expirada"),
                 tr("Tu sesión ha expirado por inactividad.") + "\n" +
-                tr("Por favor, inicia sesión nuevamente."),
-                QMessageBox.Ok
-            )
+                tr("Por favor, inicia sesión nuevamente."))
             # Marcar para evitar diálogo de confirmación en closeEvent
             self._cerrando_sesion = True
             self.close()
@@ -280,115 +268,95 @@ class MainWindow(QMainWindow):
         self.switch_page(0)
 
     def create_sidebar(self):
-        """Crea la barra lateral de navegación con diseño responsivo"""
+        """Crea la barra lateral de navegación con estilo fluent"""
+        from PyQt5.QtWidgets import QScrollArea, QSizePolicy
+
         sidebar_widget = QWidget()
-        sidebar_widget.setFixedWidth(250)
+        sidebar_widget.setFixedWidth(260)
         sidebar_widget.setObjectName("sidebar")
-        
-        # Layout principal del sidebar (Vertical)
-        main_sidebar_layout = QVBoxLayout(sidebar_widget)
-        main_sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        main_sidebar_layout.setSpacing(0)
 
-        # 1. Título del sidebar (Fijo arriba)
-        sidebar_title = QLabel(tr("NAVEGACIÓN"))
-        sidebar_title.setObjectName("sidebarTitle")
-        sidebar_title.setAlignment(Qt.AlignCenter)
-        sidebar_title.setMinimumHeight(40)
-        main_sidebar_layout.addWidget(sidebar_title)
+        main_layout = QVBoxLayout(sidebar_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # 2. Área de Scroll para los botones de navegación
+        # Área scroll para botones
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(0)  # NoFrame
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("background: transparent; border: none;")
-        
-        # Contenedor para los botones
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
         nav_container = QWidget()
-        nav_container.setObjectName("navContainer")
         nav_layout = QVBoxLayout(nav_container)
-        nav_layout.setContentsMargins(0, 0, 0, 0)
-        nav_layout.setSpacing(0)
+        nav_layout.setContentsMargins(12, 12, 12, 12)
+        nav_layout.setSpacing(6)
 
-        def add_divider(layout):
-            line = QFrame()
-            line.setObjectName("divider")
-            line.setFrameShape(QFrame.HLine)
-            line.setFrameShadow(QFrame.Sunken)
-            layout.addWidget(line)
-
-        # Datos de navegación
-        sections = [
-            [("mdi.home-variant-outline", tr("Home"), 0)],
-            [("mdi.cash-register", tr("Ventas"), 1)],
-            [("mdi.cart-outline", tr("Compras"), 2)],
-            [("mdi.account-group-outline", tr("Clientes"), 3)],
-            [("mdi.tools", tr("SAT"), 4)],
-            [("mdi.wallet", tr("Caja"), 5)],
-            [("mdi.warehouse", tr("Inventario"), 6)]
+        # Datos de navegación con FluentIcon
+        nav_items = [
+            (FluentIcon.HOME, tr("Home"), 0),
+            (FluentIcon.SHOPPING_CART, tr("Ventas"), 1),
+            (FluentIcon.MARKET, tr("Compras"), 2),
+            (FluentIcon.PEOPLE, tr("Clientes"), 3),
+            (FluentIcon.DEVELOPER_TOOLS, tr("SAT"), 4),
+            (FluentIcon.TAG, tr("Caja"), 5),
+            (FluentIcon.LIBRARY, tr("Inventario"), 6),
         ]
 
         if self.auth_manager.is_admin():
-            sections.append([("mdi.cog-outline", tr("Ajustes"), 7)])
+            nav_items.append((FluentIcon.SETTING, tr("Ajustes"), 7))
 
         self.nav_buttons = []
-        current_theme = QApplication.instance().property("theme") or "dark"
-        icon_color = get_icon_color(current_theme)
+        btn_style = """
+            QPushButton {
+                background-color: transparent;
+                color: #D8DEE9;
+                text-align: left;
+                padding: 14px 20px 14px 20px;
+                border: none;
+                border-radius: 12px;
+                font-family: "Segoe UI";
+                font-size: 16px;
+                font-weight: bold;
+                min-height: 52px;
+            }
+            QPushButton:hover {
+                background-color: rgba(136, 192, 208, 0.08);
+                color: #ECEFF4;
+            }
+            QPushButton:checked {
+                background-color: rgba(136, 192, 208, 0.15);
+                color: #88C0D0;
+                font-weight: bold;
+            }
+        """
 
-        for sec_index, items in enumerate(sections):
-            if sec_index > 0:
-                add_divider(nav_layout)
-            for icon_name, label, page_index in items:
-                btn = QPushButton(label)
-                btn.setObjectName("navButton")
-                btn.setIcon(app_icon(icon_name, color=icon_color, size=20))
-                btn.setIconSize(QSize(20, 20))
-                btn.setCheckable(True)
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                btn.setMinimumHeight(45)
-                btn.setProperty("icon_name", icon_name)
-                
-                # Aplicar estilo inline para forzar el borde en estado checked
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent;
-                        color: #D8DEE9;
-                        text-align: left;
-                        padding: 14px 20px;
-                        border: none;
-                        border-radius: 12px;
-                        margin: 6px 12px;
-                        font-size: 15px;
-                        font-weight: 600;
-                        min-height: 46px;
-                    }
-                    QPushButton:hover {
-                        background-color: #3B4252;
-                        color: #ECEFF4;
-                        border: 2px solid #4C566A;
-                        padding: 12px 18px;
-                    }
-                    QPushButton:checked {
-                        background-color: rgba(136, 192, 208, 0.15);
-                        color: #88C0D0;
-                        border: 2px solid #88C0D0;
-                        border-radius: 12px;
-                        padding: 12px 18px;
-                        font-weight: bold;
-                    }
-                """)
-                
-                btn.clicked.connect(lambda checked, idx=page_index: self.switch_page(idx))
-                nav_layout.addWidget(btn)
-                self.nav_buttons.append(btn)
+        from qfluentwidgets import setTheme, Theme as FT
+        current_theme = QApplication.instance().property("theme") or "dark"
+        icon_color = "#D8DEE9" if current_theme == "dark" else "#2E3440"
+
+        for fluent_icon, label, page_index in nav_items:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.setFixedHeight(52)
+            btn.setStyleSheet(btn_style)
+
+            # Renderizar FluentIcon a QIcon
+            icon_obj = fluent_icon.icon(color=icon_color)
+            btn.setIcon(icon_obj)
+            btn.setIconSize(QSize(24, 24))
+
+            btn.setProperty("fluent_icon", fluent_icon)
+            btn.clicked.connect(lambda checked, idx=page_index: self.switch_page(idx))
+            nav_layout.addWidget(btn)
+            self.nav_buttons.append(btn)
 
         nav_layout.addStretch()
         scroll.setWidget(nav_container)
-        main_sidebar_layout.addWidget(scroll, 1) # Factor 1 para que ocupe el centro
+        main_layout.addWidget(scroll, 1)
 
-        # 3. Logo de la empresa en el pie (Fijo abajo)
+        # Logo de la empresa al pie
         self.logo_container = QWidget()
         self.logo_container.setObjectName("logoContainer")
         logo_layout = QVBoxLayout(self.logo_container)
@@ -397,22 +365,33 @@ class MainWindow(QMainWindow):
 
         self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setMaximumHeight(160) # Restaurado para evitar recortes
+        self.logo_label.setMaximumHeight(160)
         self.logo_label.setStyleSheet("border: none; padding: 0px;")
         logo_layout.addWidget(self.logo_label)
 
-        main_sidebar_layout.addWidget(self.logo_container, 0) # Factor 0 para que no sea aplastado
+        main_layout.addWidget(self.logo_container, 0)
 
         # Cargar logo
         self.cargar_logo_sidebar()
 
         return sidebar_widget
 
+    def _add_page(self, widget):
+        """Envuelve un widget en QScrollArea y lo añade al stacked_widget.
+        Así cuando la ventana sea pequeña aparecen scrollbars en vez de solapamientos."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(widget)
+        self.stacked_widget.addWidget(scroll)
+
     def create_content_pages(self):
         """Crea las páginas de contenido"""
         # Página 0: Home (Estadísticas)
         self.estadisticas_tab = EstadisticasTab()
-        self.stacked_widget.addWidget(self.estadisticas_tab)
+        self._add_page(self.estadisticas_tab)
 
         # Página 1: Ventas (Tabs: Nueva Venta + Historial)
         ventas_widget = QWidget()
@@ -423,7 +402,7 @@ class MainWindow(QMainWindow):
         ventas_tabs.addTab(self.factura_tab, tr("Nueva Venta"))
         ventas_tabs.addTab(self.historial_tab, tr("Historial"))
         ventas_layout.addWidget(ventas_tabs)
-        self.stacked_widget.addWidget(ventas_widget)
+        self._add_page(ventas_widget)
 
         # Página 2: Compras (Tabs: Nueva Compra + Historial)
         compras_widget = QWidget()
@@ -435,11 +414,11 @@ class MainWindow(QMainWindow):
         compras_tabs.addTab(self.compras_historial_tab, tr("Historial"))
         compras_tabs.currentChanged.connect(lambda index: self.compras_historial_tab.limpiar_filtros() if index == 1 else None)
         compras_layout.addWidget(compras_tabs)
-        self.stacked_widget.addWidget(compras_widget)
+        self._add_page(compras_widget)
 
         # Página 3: Clientes
         self.clientes_tab = ClientesTab(self.auth_manager)
-        self.stacked_widget.addWidget(self.clientes_tab)
+        self._add_page(self.clientes_tab)
 
         # Página 4: SAT (Tabs: Nueva Reparación + Historial)
         sat_widget = QWidget()
@@ -450,7 +429,7 @@ class MainWindow(QMainWindow):
         sat_tabs.addTab(self.reparaciones_nueva_tab, tr("Nueva Reparación"))
         sat_tabs.addTab(self.reparaciones_historial_tab, tr("Historial"))
         sat_layout.addWidget(sat_tabs)
-        self.stacked_widget.addWidget(sat_widget)
+        self._add_page(sat_widget)
 
         # Página 5: Caja (Tabs: TPV + Historial + Movimientos + Devoluciones + Cierre)
         caja_widget = QWidget()
@@ -467,7 +446,7 @@ class MainWindow(QMainWindow):
         caja_tabs.addTab(self.caja_devoluciones_tab, tr("Devoluciones"))
         caja_tabs.addTab(self.caja_cierre_tab, tr("Cierre Diario"))
         caja_layout.addWidget(caja_tabs)
-        self.stacked_widget.addWidget(caja_widget)
+        self._add_page(caja_widget)
 
         # Página 6: Inventario (Tabs: Productos + Categorías)
         inventario_widget = QWidget()
@@ -478,34 +457,26 @@ class MainWindow(QMainWindow):
         inventario_tabs.addTab(self.productos_tab, tr("Productos"))
         inventario_tabs.addTab(self.categorias_tab, tr("Categorías"))
         inventario_layout.addWidget(inventario_tabs)
-        self.stacked_widget.addWidget(inventario_widget)
+        self._add_page(inventario_widget)
 
         # Página 7: Ajustes (solo admin)
         if self.auth_manager.is_admin():
-            # Usar directamente ConfiguracionTab que ya tiene todo integrado
             self.configuracion_tab = ConfiguracionTab(self.auth_manager)
-            self.stacked_widget.addWidget(self.configuracion_tab)
+            self._add_page(self.configuracion_tab)
 
     def switch_page(self, index):
-        """Cambia a la página indicada y actualiza iconos"""
+        """Cambia a la página indicada y actualiza el sidebar"""
         current_theme = QApplication.instance().property("theme") or "dark"
-        icon_color = get_icon_color(current_theme)
-        
+        icon_color = "#D8DEE9" if current_theme == "dark" else "#2E3440"
+        active_color = "#88C0D0"
+
         for i, btn in enumerate(self.nav_buttons):
-            btn.setChecked(False)
-            icon_name = btn.property("icon_name")
-            if icon_name:
-                btn.setIcon(app_icon(icon_name, color=icon_color, size=20))
+            btn.setChecked(i == index)
+            fluent_icon = btn.property("fluent_icon")
+            if fluent_icon:
+                color = active_color if i == index else icon_color
+                btn.setIcon(fluent_icon.icon(color=color))
 
-        if index < len(self.nav_buttons):
-            self.nav_buttons[index].setChecked(True)
-            icon_name = self.nav_buttons[index].property("icon_name")
-            if icon_name:
-                # Usar color turquesa (NORD8) para el icono seleccionado
-                from app.ui.styles import NORD8
-                self.nav_buttons[index].setIcon(app_icon(icon_name, color=NORD8, size=20))
-
-        # Refrescar estadísticas si vamos a Home (índice 0)
         if index == 0:
             self.estadisticas_tab.cargar_estadisticas()
 
@@ -541,17 +512,17 @@ class MainWindow(QMainWindow):
         if self.company_info['nif'] or self.company_info['city'] or self.company_info['phone']:
             partes = []
             if self.company_info['nif']:
-                partes.append(f"NIF: {self.company_info['nif']}")
+                partes.append(f"{tr('NIF')}: {self.company_info['nif']}")
             if self.company_info['city']:
                 partes.append(self.company_info['city'])
             if self.company_info['phone']:
-                partes.append(f"Tel: {self.company_info['phone']}")
+                partes.append(f"{tr('Tel')}: {self.company_info['phone']}")
             info_text = " • ".join(partes)
             info = QLabel(info_text)
-            info.setStyleSheet("color: #cccccc; font-size: 13px;")
+            info.setStyleSheet("color: #D8DEE9; font-size: 13px;")
         else:
             info = QLabel(tr("Configure su empresa en Ajustes"))
-            info.setStyleSheet("color: #969696; font-size: 12px; font-style: italic;")
+            info.setStyleSheet("color: #7B88A0; font-size: 12px; font-style: italic;")
 
         # Info usuario (alto contraste)
         usuario_info = QLabel(f"👤 {self.usuario['nombre_completo']} ({self.usuario['rol'].upper()})")
@@ -580,43 +551,50 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background-color: #2d2d30;
-                border: 1px solid #3e3e42;
+                background-color: #3B4252;
+                border: 1px solid #4C566A;
                 border-radius: 8px;
                 padding: 8px 0;
             }
             QMenu::item {
                 background-color: transparent;
-                color: #cccccc;
+                color: #D8DEE9;
                 padding: 10px 20px;
                 font-size: 13px;
             }
             QMenu::item:selected {
-                background-color: #094771;
+                background-color: #434C5E;
                 color: #ffffff;
             }
             QMenu::separator {
                 height: 1px;
-                background: #3e3e42;
+                background: #4C566A;
                 margin: 6px 12px;
             }
             QMenu::item:disabled {
-                color: #6e6e6e;
+                color: #4C566A;
             }
         """)
 
+        # Acción: Guía interactiva
+        action_guia = QAction(app_icon("mdi.help-circle-outline", color="#D8DEE9", size=16), tr("Guía"), self)
+        action_guia.triggered.connect(self._mostrar_guia)
+        menu.addAction(action_guia)
+
+        menu.addSeparator()
+
         # Acción: Acerca de
-        action_about = QAction(app_icon("mdi.information-outline", color="#cccccc", size=16), tr("Acerca de..."), self)
+        action_about = QAction(app_icon("mdi.information-outline", color="#D8DEE9", size=16), tr("Acerca de..."), self)
         action_about.triggered.connect(self._mostrar_acerca_de)
         menu.addAction(action_about)
 
         # Acción: Información de Licencia
-        action_license = QAction(app_icon("mdi.license", color="#cccccc", size=16), tr("Información de Licencia"), self)
+        action_license = QAction(app_icon("mdi.license", color="#D8DEE9", size=16), tr("Información de Licencia"), self)
         action_license.triggered.connect(self._mostrar_info_licencia)
         menu.addAction(action_license)
 
         # Acción: Buscar Actualizaciones
-        action_update = QAction(app_icon("mdi.update", color="#cccccc", size=16), tr("Buscar Actualizaciones"), self)
+        action_update = QAction(app_icon("mdi.update", color="#D8DEE9", size=16), tr("Buscar Actualizaciones"), self)
         action_update.triggered.connect(self._comprobar_actualizaciones_manual)
         menu.addAction(action_update)
 
@@ -627,14 +605,14 @@ class MainWindow(QMainWindow):
         icon_theme = "mdi.weather-sunny" if tema_actual == "dark" else "mdi.weather-night"
         text_theme = tr("Activar Modo Claro") if tema_actual == "dark" else tr("Activar Modo Oscuro")
         
-        action_theme = QAction(app_icon(icon_theme, color="#cccccc", size=16), text_theme, self)
+        action_theme = QAction(app_icon(icon_theme, color="#D8DEE9", size=16), text_theme, self)
         action_theme.triggered.connect(self._cambiar_tema)
         menu.addAction(action_theme)
 
         menu.addSeparator()
 
         # Submenú: Idioma
-        idioma_menu = menu.addMenu(app_icon("mdi.translate", color="#cccccc", size=16), tr("Idioma"))
+        idioma_menu = menu.addMenu(app_icon("mdi.translate", color="#D8DEE9", size=16), tr("Idioma"))
         idioma_menu.setStyleSheet(menu.styleSheet())
 
         idiomas = [
@@ -662,12 +640,27 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
 
         # Acción: Cerrar Sesión
-        action_logout = QAction(app_icon("mdi.logout", color="#cccccc", size=16), tr("Cerrar Sesión"), self)
+        action_logout = QAction(app_icon("mdi.logout", color="#D8DEE9", size=16), tr("Cerrar Sesión"), self)
         action_logout.triggered.connect(self.cerrar_sesion)
         menu.addAction(action_logout)
 
         # Mostrar menú debajo del botón
         menu.exec_(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
+
+    def _mostrar_guia(self):
+        """Abre el selector de tutoriales interactivos (Coach Marks)."""
+        from app.ui.guide_dialog import GuideDialog
+        is_admin = self.auth_manager.is_admin() if hasattr(self.auth_manager, 'is_admin') else False
+        dialog = GuideDialog(self, is_admin=is_admin)
+        if dialog.exec_():
+            tour_key = dialog.get_tour_seleccionado()
+            if tour_key:
+                from app.ui.tours import get_tours
+                from app.ui.tour_overlay import TourOverlay
+                tours = get_tours(self)
+                if tour_key in tours:
+                    overlay = TourOverlay(self)
+                    overlay.start(tours[tour_key])
 
     def _obtener_idioma_actual(self):
         """Obtiene el idioma actual desde la configuración"""
@@ -707,21 +700,28 @@ class MainWindow(QMainWindow):
 
             # Refrescar el traductor inmediatamente
             from app.i18n import get_translator
-            get_translator().refresh_language()
+            translator = get_translator()
+            idioma_anterior = translator.get_language()
+            
+            translator.refresh_language()
 
-            QMessageBox.information(
-                self,
-                tr("Idioma"),
-                tr("El idioma se ha actualizado. Los cambios se aplicarán completamente al cerrar sesión o reiniciar."),
-                QMessageBox.Ok
-            )
+            # Preguntar si desea reiniciar ahora para aplicar los cambios
+            if ask_confirm(self, tr("Idioma"), tr("El idioma se ha actualizado. ¿Deseas reiniciar la aplicación ahora para aplicar los cambios completamente?")):
+                self._cerrando_sesion = True  # Para evitar la pregunta doble de confirmación de salida
+                
+                # Cerramos la ventana principal devolviendo código especial 888 
+                # para que main.py intercepte y salte el login
+                from PyQt5.QtWidgets import QApplication
+                QApplication.instance().exit(888)
+            else:
+                # Si el usuario dice que no, restauramos en memoria el idioma anterior
+                # para que la aplicación actual no quede mezclada en dos idiomas.
+                # (en base de datos ya está guardado para el próximo reinicio)
+                translator.set_language(idioma_anterior)
+            
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.warning(
-                self,
-                tr("Error"),
-                f"{tr('Error')}: {e}",
-                QMessageBox.Ok
-            )
+            from app.utils.notify import notify_error
+            notify_error(self, tr("Error"), f"{tr('Error')}: {e}")
 
 
     def _cambiar_tema(self):
@@ -747,16 +747,15 @@ class MainWindow(QMainWindow):
             # Aplicar tema
             apply_theme(app, nuevo_tema)
             
-            # Forzar actualización de iconos del sidebar
-            # Simplemente llamando a switch_page con el índice actual recreará los iconos con el color correcto
+            # NavigationInterface se adapta automáticamente al tema
             current_index = self.stacked_widget.currentIndex()
-            self.switch_page(current_index)
+            self.stacked_widget.setCurrentIndex(current_index)
             
             # Notificar (opcional, el cambio es visual inmediato)
             # QMessageBox.information(self, tr("Tema Cambiado"), tr("El tema se ha actualizado."))
             
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.warning(self, tr("Error"), f"Error cambiando tema: {e}")
+            notify_error(self, tr("Error"), tr("Error cambiando tema") + f": {e}")
     def _mostrar_acerca_de(self):
         """Muestra el diálogo Acerca de"""
         from app.ui.about_dialog import AboutDialog
@@ -771,14 +770,7 @@ class MainWindow(QMainWindow):
 
     def cerrar_sesion(self):
         """Cierra la sesión del usuario actual"""
-        respuesta = QMessageBox.question(
-            self,
-            tr("Cerrar Sesión"),
-            tr("¿Deseas cerrar sesión?"),
-            QMessageBox.Yes | QMessageBox.No
-        )
-
-        if respuesta == QMessageBox.Yes:
+        if ask_confirm(self, tr("Cerrar Sesión"), tr("¿Deseas cerrar sesión?")):
             self._cerrando_sesion = True  # Evitar doble confirmación
             self.auth_manager.logout()
             self.close()
@@ -838,15 +830,7 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
-        respuesta = QMessageBox.question(
-            self,
-            tr("Confirmar Cierre"),
-            tr("¿Estás seguro de que deseas salir de la aplicación?"),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No  # Botón por defecto = No (previene cierre accidental)
-        )
-
-        if respuesta == QMessageBox.Yes:
+        if ask_confirm(self, tr("Confirmar Cierre"), tr("¿Estás seguro de que deseas salir de la aplicación?")):
             event.accept()  # Permite cerrar
         else:
             event.ignore()  # Cancela el cierre

@@ -149,7 +149,7 @@ class PermissionManager:
                         )
                 return rol_id
             return None
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error creando rol: {e}")
             return None
     
@@ -190,7 +190,7 @@ class PermissionManager:
                     )
             
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error actualizando rol: {e}")
             return False
     

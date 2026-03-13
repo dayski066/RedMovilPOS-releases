@@ -4,13 +4,14 @@ Una sola ventana que maneja todo el proceso con monitoreo en tiempo real.
 """
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QProgressBar, QFrame, QMessageBox
+    QProgressBar, QFrame
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont
 import platform
 import os
 from app.utils.logger import logger
+from app.i18n import tr
 
 
 class UnifiedProgressDialog(QDialog):
@@ -49,10 +50,10 @@ class UnifiedProgressDialog(QDialog):
     JOB_STATUS_RESTART = 0x00000800
     JOB_STATUS_COMPLETE = 0x00001000
 
-    def __init__(self, parent=None, mode=MODE_FULL, title="Procesando"):
+    def __init__(self, parent=None, mode=MODE_FULL, title=None):
         super().__init__(parent)
         self.mode = mode
-        self.setWindowTitle(title)
+        self.setWindowTitle(title or tr("Procesando"))
         self.setModal(True)
         self.setFixedSize(500, 500)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
@@ -92,7 +93,7 @@ class UnifiedProgressDialog(QDialog):
         layout.setContentsMargins(25, 25, 25, 25)
 
         # Título
-        self.title_label = QLabel("Iniciando...")
+        self.title_label = QLabel(tr("Iniciando..."))
         self.title_label.setFont(QFont("", 14, QFont.Bold))
         self.title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.title_label)
@@ -105,12 +106,12 @@ class UnifiedProgressDialog(QDialog):
         self.progress_bar.setFixedHeight(25)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #ddd;
+                border: 2px solid #4C566A;
                 border-radius: 12px;
-                background-color: #f0f0f0;
+                background-color: #3B4252;
             }
             QProgressBar::chunk {
-                background-color: #3498db;
+                background-color: #5E81AC;
                 border-radius: 10px;
             }
         """)
@@ -127,19 +128,19 @@ class UnifiedProgressDialog(QDialog):
 
         if self.mode == self.MODE_FULL:
             stages = [
-                ("1. Guardando en base de datos", self.STATE_SAVING),
-                ("2. Generando documento PDF", self.STATE_GENERATING_PDF),
-                ("3. Enviando a impresora", self.STATE_SENDING),
-                ("4. En cola de impresión", self.STATE_IN_QUEUE),
-                ("5. Imprimiendo", self.STATE_PRINTING),
-                ("6. Completado", self.STATE_COMPLETED)
+                (tr("1. Guardando en base de datos"), self.STATE_SAVING),
+                (tr("2. Generando documento PDF"), self.STATE_GENERATING_PDF),
+                (tr("3. Enviando a impresora"), self.STATE_SENDING),
+                (tr("4. En cola de impresión"), self.STATE_IN_QUEUE),
+                (tr("5. Imprimiendo"), self.STATE_PRINTING),
+                (tr("6. Completado"), self.STATE_COMPLETED)
             ]
         else:  # MODE_PRINT_ONLY
             stages = [
-                ("1. Enviando a impresora", self.STATE_SENDING),
-                ("2. En cola de impresión", self.STATE_IN_QUEUE),
-                ("3. Imprimiendo", self.STATE_PRINTING),
-                ("4. Completado", self.STATE_COMPLETED)
+                (tr("1. Enviando a impresora"), self.STATE_SENDING),
+                (tr("2. En cola de impresión"), self.STATE_IN_QUEUE),
+                (tr("3. Imprimiendo"), self.STATE_PRINTING),
+                (tr("4. Completado"), self.STATE_COMPLETED)
             ]
 
         for text, state_id in stages:
@@ -155,7 +156,7 @@ class UnifiedProgressDialog(QDialog):
         # Estado detallado
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("color: #666; font-style: italic;")
+        self.status_label.setStyleSheet("color: #4C566A; font-style: italic;")
         layout.addWidget(self.status_label)
 
         # Botones (ocultos inicialmente)
@@ -166,12 +167,12 @@ class UnifiedProgressDialog(QDialog):
         self.btn_retry.setFixedSize(120, 35)
         self.btn_retry.setStyleSheet("""
             QPushButton {
-                background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC;
-                border: none;
+                background-color: transparent; color: #5E81AC;
+                border: 2px solid #5E81AC;
                 border-radius: 5px;
                 font-weight: bold;
             }
-            QPushButton:hover { background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; }
+            QPushButton:hover { background-color: rgba(94, 129, 172, 40); color: #5E81AC; border: 2px solid #5E81AC; }
         """)
         self.btn_retry.clicked.connect(self._on_retry)
         self.btn_retry.hide()
@@ -180,12 +181,12 @@ class UnifiedProgressDialog(QDialog):
         self.btn_cancel.setFixedSize(120, 35)
         self.btn_cancel.setStyleSheet("""
             QPushButton {
-                background-color: transparent; color: #BF616A; border: 2px solid #BF616A;
-                border: none;
+                background-color: transparent; color: #BF616A;
+                border: 2px solid #BF616A;
                 border-radius: 5px;
                 font-weight: bold;
             }
-            QPushButton:hover { background-color: transparent; color: #BF616A; border: 2px solid #BF616A; }
+            QPushButton:hover { background-color: rgba(191, 97, 106, 40); color: #BF616A; border: 2px solid #BF616A; }
         """)
         self.btn_cancel.clicked.connect(self._on_cancel)
         self.btn_cancel.hide()
@@ -204,7 +205,7 @@ class UnifiedProgressDialog(QDialog):
         for i, label in enumerate(self.stage_labels):
             if label.state_id < self.current_state:
                 # Completada
-                label.setStyleSheet("color: #27ae60; font-weight: bold;")
+                label.setStyleSheet("color: #A3BE8C; font-weight: bold;")
                 text = label.original_text
                 num = text.split(".")[0]
                 rest = text.split(".", 1)[1] if "." in text else text
@@ -213,13 +214,13 @@ class UnifiedProgressDialog(QDialog):
             elif label.state_id == self.current_state:
                 # Actual
                 if self.current_state == self.STATE_ERROR:
-                    label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+                    label.setStyleSheet("color: #BF616A; font-weight: bold;")
                 else:
-                    label.setStyleSheet("color: #3498db; font-weight: bold;")
+                    label.setStyleSheet("color: #5E81AC; font-weight: bold;")
                 current_index = i
             else:
                 # Pendiente
-                label.setStyleSheet("color: #999;")
+                label.setStyleSheet("color: #7B88A0;")
                 label.setText(label.original_text)
 
         # Barra de progreso
@@ -229,19 +230,19 @@ class UnifiedProgressDialog(QDialog):
 
         # Color de barra según estado
         if self.current_state == self.STATE_ERROR:
-            self.progress_bar.setStyleSheet(self._get_progress_style("#e74c3c"))
+            self.progress_bar.setStyleSheet(self._get_progress_style("#BF616A"))
         elif self.current_state == self.STATE_COMPLETED:
-            self.progress_bar.setStyleSheet(self._get_progress_style("#27ae60"))
+            self.progress_bar.setStyleSheet(self._get_progress_style("#A3BE8C"))
             self.progress_bar.setValue(100)
         else:
-            self.progress_bar.setStyleSheet(self._get_progress_style("#3498db"))
+            self.progress_bar.setStyleSheet(self._get_progress_style("#5E81AC"))
 
     def _get_progress_style(self, color):
         return f"""
             QProgressBar {{
-                border: 2px solid #ddd;
+                border: 2px solid #4C566A;
                 border-radius: 12px;
-                background-color: #f0f0f0;
+                background-color: #3B4252;
             }}
             QProgressBar::chunk {{
                 background-color: {color};
@@ -457,7 +458,7 @@ class UnifiedProgressDialog(QDialog):
             if hdc:
                 try:
                     hdc.DeleteDC()
-                except (OSError, ValueError, RuntimeError):
+                except OSError:
                     pass
 
     def _print_linux(self):
@@ -538,13 +539,13 @@ class UnifiedProgressDialog(QDialog):
             finally:
                 win32print.ClosePrinter(hPrinter)
 
-        except (OSError, ValueError, RuntimeError) as e:
+        except Exception as e:
             logger.error(f"Error verificando cola: {e}")
 
     def _show_success(self):
         """Muestra éxito y cierra"""
         self.set_state(self.STATE_COMPLETED, "")
-        self.title_label.setStyleSheet("color: #27ae60;")
+        self.title_label.setStyleSheet("color: #A3BE8C;")
         self.status_label.setText("Operación completada correctamente")
         self.operation_success = True
 
@@ -558,7 +559,7 @@ class UnifiedProgressDialog(QDialog):
         self.current_state = self.STATE_ERROR
         self.error_message = message
         self.title_label.setText("Error")
-        self.title_label.setStyleSheet("color: #e74c3c;")
+        self.title_label.setStyleSheet("color: #BF616A;")
         self.status_label.setText(message)
         self._update_display()
 
@@ -593,7 +594,7 @@ class UnifiedProgressDialog(QDialog):
         if self.delete_after and self.pdf_path and os.path.exists(self.pdf_path):
             try:
                 os.remove(self.pdf_path)
-            except (OSError, ValueError, RuntimeError):
+            except OSError:
                 pass
         
         super().closeEvent(event)

@@ -1,0 +1,89 @@
+============================================================
+     INSTRUCCIONES DE COMPILACION E INSTALADOR
+                   RedMovilPOS
+============================================================
+
+REQUISITOS:
+-----------
+1. Python 3.10+ instalado
+2. Dependencias instaladas (pip install -r requirements.txt)
+3. PyInstaller instalado (pip install pyinstaller)
+4. Inno Setup instalado (para crear el instalador)
+   Descargar de: https://jrsoftware.org/isdl.php
+
+
+PASO 1: COMPILAR EL EJECUTABLE
+------------------------------
+Opcion A - Usar el script:
+   Ejecutar: build_installer\compilar.bat
+
+Opcion B - Manual:
+   cd C:\Users\rabi3\facturar
+   python -m PyInstaller build_installer\RedMovilPOS.spec --noconfirm
+
+El ejecutable se generara en: dist\RedMovilPOS\
+
+
+PASO 2: PROBAR EL EJECUTABLE
+----------------------------
+Antes de crear el instalador, probar que funcione:
+   dist\RedMovilPOS\RedMovilPOS.exe
+
+Verificar:
+- Se abre la ventana de activacion
+- Al activar, se muestra el login
+- Todas las funciones operan correctamente
+
+
+PASO 3: CREAR EL INSTALADOR
+---------------------------
+1. Abrir Inno Setup Compiler
+2. Archivo -> Abrir -> build_installer\instalador.iss
+3. Compilar (Ctrl+F9) o Build -> Compile
+
+El instalador se generara en: instalador_output\RedMovilPOS_Setup_v2.1.exe
+
+
+DISTRIBUCION:
+-------------
+Para distribuir el programa necesitas:
+
+1. El instalador: RedMovilPOS_Setup_v2.1.exe
+   (Este es el unico archivo que necesita el cliente)
+
+2. El generador de claves (SOLO PARA TI):
+   generador_claves\keygen.py
+   generador_claves\keygen_gui.py
+
+IMPORTANTE: NUNCA incluir la carpeta "generador_claves" en la distribucion!
+
+
+FLUJO DE ACTIVACION:
+--------------------
+1. Cliente instala RedMovilPOS_Setup_v2.1.exe
+2. Al abrir, ve su ID de Maquina
+3. Te envia el ID de Maquina
+4. Tu ejecutas keygen_gui.py, introduces el ID, generas la clave
+5. Le envias la clave al cliente
+6. Cliente introduce la clave y activa el programa
+
+
+NOTAS:
+------
+- La licencia se guarda en C:\ProgramData\Facturar\license.dat
+- La base de datos se guarda en C:\ProgramData\Facturar\data\
+- Cada clave solo funciona en UNA maquina especifica
+
+
+SOLUCION DE PROBLEMAS:
+----------------------
+Si el ejecutable no funciona:
+1. Verificar que todas las dependencias estan instaladas
+2. Probar con console=True en el spec para ver errores
+3. Verificar imports ocultos en hiddenimports del spec
+
+Si el instalador da error:
+1. Verificar que dist\RedMovilPOS\ existe y tiene archivos
+2. Verificar rutas en el archivo .iss
+
+============================================================

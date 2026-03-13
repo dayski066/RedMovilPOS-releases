@@ -2,10 +2,11 @@
 Módulo para generar e imprimir tickets para impresoras térmicas POS58
 Ancho: 58mm (aprox. 32-48 caracteres por línea)
 """
-import sqlite3
+import sqlite3  # Solo para queries BD en obtener_datos_establecimiento
 from datetime import datetime
 import subprocess
 from app.utils.logger import logger
+from app.exceptions import PrinterError
 
 # Importación opcional de python-escpos (solo si está instalado)
 try:
@@ -54,7 +55,7 @@ class TicketPrinter:
                 datos['telefono'] = establecimiento.get('telefono') or ''
                 datos['logo_path'] = establecimiento.get('logo_path') or ''
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error obteniendo datos de establecimiento: {e}")
 
         return datos
@@ -224,7 +225,7 @@ class TicketPrinter:
             else:
                 # Intentar detectar impresora USB (requiere configuración)
                 # Esto es un ejemplo, ajustar vendor_id y product_id según tu impresora
-                raise Exception("No se ha especificado impresora")
+                raise PrinterError("No se ha especificado impresora")
 
             # Obtener contenido del ticket
             contenido = self.generar_contenido_ticket(venta)
@@ -257,7 +258,7 @@ class TicketPrinter:
 
         except EscposError as e:
             return False, f"Error de impresora ESC/POS: {str(e)}"
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             return False, f"Error al imprimir: {str(e)}"
 
     def guardar_ticket_txt(self, venta, ruta_archivo=None):
@@ -289,7 +290,7 @@ class TicketPrinter:
 
             return True, ruta_archivo
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (OSError, ValueError) as e:
             return False, f"Error al guardar ticket: {str(e)}"
 
     def imprimir_a_impresora_windows(self, venta, printer_name):
@@ -329,7 +330,7 @@ class TicketPrinter:
                 try:
                     font = ImageFont.truetype(fuente, font_size)
                     break
-                except (sqlite3.Error, OSError, ValueError):
+                except OSError:
                     continue
 
             if font is None:
@@ -359,7 +360,7 @@ class TicketPrinter:
                             background.paste(logo_img)
                         logo_img = background
                     logo_height = logo_img.size[1] + 10  # Altura del logo + margen
-                except (sqlite3.Error, OSError, ValueError) as e:
+                except (OSError, ValueError) as e:
                     logger.error(f"Error cargando logo: {e}")
                     logo_img = None
 
@@ -416,7 +417,7 @@ class TicketPrinter:
                 # Eliminar archivo temporal
                 try:
                     os.unlink(temp_file.name)
-                except (sqlite3.Error, OSError, ValueError):
+                except OSError:
                     pass  # Ignorar si no se puede eliminar
 
             return True, "Ticket impreso correctamente"
@@ -424,7 +425,7 @@ class TicketPrinter:
         except ImportError:
             # Si no está disponible win32print, usar método alternativo
             return self._imprimir_texto_plano(venta, printer_name)
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             return False, f"Error al imprimir: {str(e)}"
 
     def _imprimir_texto_plano(self, venta, printer_name):
@@ -458,5 +459,5 @@ class TicketPrinter:
 
             return True, "Ticket enviado a impresora"
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return False, f"Error al imprimir: {str(e)}"

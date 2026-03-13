@@ -103,9 +103,10 @@ class Translator:
         return translations
 
     def set_language(self, lang_code):
-        """Cambia el idioma actual"""
+        """Cambia el idioma actual y recarga las traducciones"""
         if lang_code in self.LANGUAGES:
             self.current_language = lang_code
+            self.translations = self._load_translations()
             return True
         return False
 
@@ -131,9 +132,10 @@ class Translator:
         # DEBUG
         # print(f"[DEBUG i18n] Translating '{key}' | Lang: {self.current_language}")
         
-        # Si el idioma es español, devolver la clave directamente
+        # Si el idioma es español, buscar en el diccionario (fallback a la clave)
         if self.current_language == 'es':
-            text = key
+            es_dict = self.translations.get('es', {})
+            text = es_dict.get(key, key)
         else:
             # Buscar traducción en el diccionario del idioma actual
             lang_dict = self.translations.get(self.current_language, {})

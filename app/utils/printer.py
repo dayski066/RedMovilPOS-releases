@@ -3,12 +3,13 @@ Utilidades para impresión física de documentos
 Sistema de impresión directa con monitoreo en tiempo real
 Soporta 3 tipos de impresora: general (A4), tickets (térmica), etiquetas
 """
-import sqlite3
+import sqlite3  # Solo para lectura de configuración BD
 import os
 import platform
-from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
+from app.utils.notify import notify_warning
 from app.utils.logger import logger
+from app.exceptions import PrinterError
 
 
 # Tipos de impresora disponibles
@@ -33,7 +34,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
     """
     if not pdf_path or not os.path.exists(pdf_path):
         if parent_widget:
-            QMessageBox.warning(parent_widget, "Error", "El archivo PDF no existe")
+            notify_warning(parent_widget, "Error", "El archivo PDF no existe")
         return False
 
     # Obtener impresora configurada según el tipo
@@ -49,7 +50,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
             duplex_res = db.fetch_one("SELECT valor FROM configuracion WHERE clave = 'printer_duplex'")
             if duplex_res and duplex_res['valor'] == '1':
                 duplex_enabled = True
-    except (sqlite3.Error, OSError, ValueError) as e:
+    except sqlite3.Error as e:
         logger.error(f"Error leyendo configuración: {e}")
 
     if not printer_name:
@@ -60,7 +61,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
         }.get(tipo_impresora, tipo_impresora)
 
         if parent_widget:
-            QMessageBox.warning(parent_widget, "Sin Impresora",
+            notify_warning(parent_widget, "Sin Impresora",
                 f"No hay impresora '{tipo_nombre}' configurada.\n"
                 "Ve a Ajustes > Impresoras para configurarla.")
         return False
@@ -82,7 +83,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
                 try:
                     os.remove(pdf_path)
                     logger.info(f"Archivo temporal borrado: {pdf_path}")
-                except (sqlite3.Error, OSError, ValueError) as e:
+                except OSError as e:
                     logger.warning(f"No se pudo borrar archivo: {e}")
 
         def on_failed(result):
@@ -94,7 +95,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
                 if delete_after and pdf_path and os.path.exists(pdf_path):
                     try:
                         os.remove(pdf_path)
-                    except (sqlite3.Error, OSError, ValueError):
+                    except OSError:
                         pass
 
         dialog.print_success.connect(on_success)
@@ -122,7 +123,7 @@ def imprimir_pdf(pdf_path, db, parent_widget=None, tipo_impresora=PRINTER_GENERA
                 else:
                     dialog._show_error("Error al enviar a la impresora")
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             dialog._show_error(f"Error: {str(e)}")
 
         # Mostrar diálogo y bloquear hasta que termine
@@ -161,7 +162,7 @@ def _imprimir_windows(pdf_path, printer_name, duplex=False, es_ticket=False):
         num_pages = len(doc)
 
         if num_pages == 0:
-            raise Exception("El PDF no tiene páginas")
+            raise PrinterError("El PDF no tiene páginas")
 
         # 2. Si duplex está habilitado, configurar la impresora temporalmente
         if duplex:
@@ -181,7 +182,7 @@ def _imprimir_windows(pdf_path, printer_name, duplex=False, es_ticket=False):
                     win32print.SetPrinter(hPrinter, 2, printer_info, 0)
                     logger.info("Impresora configurada para doble cara")
 
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except Exception as e:
                 logger.warning(f"No se pudo configurar duplex: {e}")
                 if hPrinter:
                     win32print.ClosePrinter(hPrinter)
@@ -264,7 +265,7 @@ def _imprimir_windows(pdf_path, printer_name, duplex=False, es_ticket=False):
 
         return (True, printer_name, job_id)
 
-    except (sqlite3.Error, OSError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error impresión: {e}", exc_info=True)
         return (False, None, None)
 
@@ -275,25 +276,25 @@ def _imprimir_windows(pdf_path, printer_name, duplex=False, es_ticket=False):
                 printer_info = win32print.GetPrinter(hPrinter, 2)
                 printer_info['pDevMode'] = original_devmode
                 win32print.SetPrinter(hPrinter, 2, printer_info, 0)
-            except (sqlite3.Error, OSError, ValueError):
-                pass
+            except Exception as e:
+                logger.warning(f"No se pudo restaurar configuración duplex: {e}")
 
         # Cerrar recursos
         if hPrinter:
             try:
                 win32print.ClosePrinter(hPrinter)
-            except (sqlite3.Error, OSError, ValueError):
-                pass
+            except Exception as e:
+                logger.warning(f"No se pudo cerrar hPrinter: {e}")
         if doc:
             try:
                 doc.close()
-            except (sqlite3.Error, OSError, ValueError):
-                pass
+            except Exception as e:
+                logger.warning(f"No se pudo cerrar documento PDF: {e}")
         if hdc:
             try:
                 hdc.DeleteDC()
-            except (sqlite3.Error, OSError, ValueError):
-                pass
+            except Exception as e:
+                logger.warning(f"No se pudo liberar contexto de dispositivo: {e}")
 
 
 def abrir_archivo(path):
@@ -307,7 +308,7 @@ def abrir_archivo(path):
         else:
             import subprocess
             subprocess.call(['xdg-open', path])
-    except (sqlite3.Error, OSError, ValueError) as e:
+    except OSError as e:
         logger.error(f"Error abriendo archivo: {e}")
 
 

@@ -4,6 +4,7 @@ Gestor de compras
 import sqlite3
 from config import PURCHASE_PREFIX
 from app.utils.logger import get_logger
+from app.exceptions import ValidationError, DatabaseQueryError
 
 logger = get_logger('compra')
 
@@ -15,29 +16,37 @@ class CompraManager:
     def obtener_siguiente_numero(self):
         """
         Obtiene el siguiente número de compra de forma atómica.
-        Usa UPDATE + SELECT para evitar condiciones de carrera.
+        Usa transacción explícita + UPDATE + SELECT para evitar condiciones de carrera.
         """
-        # Actualizar atómicamente e incrementar en 1
-        self.db.execute_query(
-            """UPDATE configuracion
-               SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
-               WHERE clave = 'ultimo_numero_compra'"""
-        )
+        if not self.db.begin_transaction():
+            raise DatabaseQueryError(original_error="No se pudo iniciar transacción para generar número de compra")
 
-        # Obtener el valor actualizado
-        config = self.db.fetch_one(
-            "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_compra'"
-        )
+        try:
+            self.db.execute_query(
+                """UPDATE configuracion
+                   SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
+                   WHERE clave = 'ultimo_numero_compra'"""
+            )
 
-        if config:
-            siguiente = int(config['valor'])
-            return f"{PURCHASE_PREFIX}{siguiente}"
+            config = self.db.fetch_one(
+                "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_compra'"
+            )
 
-        # Si no existe, crear con valor 1
-        self.db.execute_query(
-            "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_compra', '1')"
-        )
-        return f"{PURCHASE_PREFIX}1"
+            if config:
+                siguiente = int(config['valor'])
+                self.db.commit()
+                return f"{PURCHASE_PREFIX}{siguiente}"
+
+            # Si no existe, crear con valor 1
+            self.db.execute_query(
+                "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_compra', '1')"
+            )
+            self.db.commit()
+            return f"{PURCHASE_PREFIX}1"
+
+        except sqlite3.Error as e:
+            self.db.rollback()
+            raise DatabaseQueryError(original_error=f"Error generando número de compra: {e}")
 
     def actualizar_numero_compra(self, numero):
         """
@@ -81,16 +90,22 @@ class CompraManager:
             )
 
             if not compra_id:
-                raise Exception("No se pudo insertar la compra")
+                raise DatabaseQueryError(original_error="No se pudo insertar la compra")
 
             # 2. Insertar items y actualizar stock
             for item in datos['items']:
                 # Validar datos del item
                 if item['cantidad'] <= 0:
-                    raise ValueError(f"Cantidad inválida para item {item['descripcion']}: {item['cantidad']}")
+                    raise ValidationError(
+                        f"Cantidad inválida para item {item['descripcion']}: {item['cantidad']}",
+                        code="ITEM_CANTIDAD_INVALIDA"
+                    )
 
                 if item['precio_unitario'] < 0:
-                    raise ValueError(f"Precio inválido para item {item['descripcion']}: {item['precio_unitario']}")
+                    raise ValidationError(
+                        f"Precio inválido para item {item['descripcion']}: {item['precio_unitario']}",
+                        code="ITEM_PRECIO_INVALIDO"
+                    )
 
                 total_item = item['cantidad'] * item['precio_unitario']
 
@@ -112,7 +127,7 @@ class CompraManager:
                 )
 
                 if not item_id:
-                    raise Exception(f"No se pudo insertar item: {item['descripcion']}")
+                    raise DatabaseQueryError(original_error=f"No se pudo insertar item: {item['descripcion']}")
 
                 # 3. Actualizar stock del producto si existe
                 if item.get('ean'):
@@ -125,7 +140,10 @@ class CompraManager:
 
                         # Validar que el stock no sea negativo
                         if nuevo_stock < 0:
-                            raise ValueError(f"Stock negativo para producto {item['descripcion']}: {nuevo_stock}")
+                            raise ValidationError(
+                                f"Stock negativo para producto {item['descripcion']}: {nuevo_stock}",
+                                code="STOCK_NEGATIVO"
+                            )
 
                         self.db.execute_query(
                             "UPDATE productos SET stock = ? WHERE id = ?",
@@ -164,7 +182,7 @@ class CompraManager:
             logger.info(f"Compra {datos['numero']} guardada exitosamente")
             return compra_id
 
-        except sqlite3.Error as e:
+        except (sqlite3.Error, ValidationError, DatabaseQueryError) as e:
             # REVERTIR TRANSACCIÓN - Algo falló
             self.db.rollback()
             logger.error(f"Error guardando compra (transacción revertida): {e}")
@@ -255,12 +273,54 @@ class CompraManager:
                 params.append(f"%{filtros['imei']}%")
 
             if filtros.get('ean'):
-                query += " AND ci.ean LIKE ?"
+                query += " AND ci.codigo_ean LIKE ?"
                 params.append(f"%{filtros['ean']}%")
 
         query += " ORDER BY fecha DESC, id DESC"
 
         return self.db.fetch_all(query, params if params else None)
+
+    def buscar_compras_paginado(self, filtros=None, limit=50, offset=0):
+        """Busca compras con paginación. Retorna (compras, total_count)"""
+        joins = ""
+        where_parts = []
+        params = []
+
+        if filtros and (filtros.get('imei') or filtros.get('ean')):
+            joins = " LEFT JOIN compras_items ci ON c.id = ci.compra_id"
+
+        if filtros:
+            if filtros.get('fecha_desde'):
+                where_parts.append("c.fecha >= ?")
+                params.append(filtros['fecha_desde'])
+            if filtros.get('fecha_hasta'):
+                where_parts.append("c.fecha <= ?")
+                params.append(filtros['fecha_hasta'])
+            if filtros.get('proveedor'):
+                where_parts.append("c.proveedor_nombre LIKE ?")
+                params.append(f"%{filtros['proveedor']}%")
+            if filtros.get('numero'):
+                where_parts.append("c.numero_compra LIKE ?")
+                params.append(f"%{filtros['numero']}%")
+            if filtros.get('imei'):
+                where_parts.append("ci.imei LIKE ?")
+                params.append(f"%{filtros['imei']}%")
+            if filtros.get('ean'):
+                where_parts.append("ci.codigo_ean LIKE ?")
+                params.append(f"%{filtros['ean']}%")
+
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+        distinct = "DISTINCT " if joins else ""
+
+        count_query = f"SELECT COUNT({distinct}c.id) as total FROM compras c{joins} WHERE {where_clause}"
+        count_result = self.db.fetch_one(count_query, params if params else None)
+        total = count_result['total'] if count_result else 0
+
+        data_query = f"SELECT {distinct}c.* FROM compras c{joins} WHERE {where_clause} ORDER BY c.fecha DESC, c.id DESC LIMIT ? OFFSET ?"
+        data_params = (params + [limit, offset]) if params else [limit, offset]
+        compras = self.db.fetch_all(data_query, data_params)
+
+        return compras, total
 
     def eliminar_compra(self, compra_id, revertir_stock=True, usuario_id=None):
         """
@@ -275,10 +335,10 @@ class CompraManager:
         if not compra:
             return False, "Compra no encontrada"
 
-        try:
-            # INICIAR TRANSACCIÓN para garantizar consistencia
-            self.db.begin_transaction()
+        if not self.db.begin_transaction():
+            return False, "Error iniciando transacción"
 
+        try:
             # 1. Revertir Stock (solo si se solicita)
             if revertir_stock:
                 for item in compra['items']:

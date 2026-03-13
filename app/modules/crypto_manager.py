@@ -7,6 +7,7 @@ import os
 import base64
 from cryptography.fernet import Fernet
 from app.utils.logger import get_logger
+from app.exceptions import DPAPIError, DecryptionError
 
 logger = get_logger('crypto')
 
@@ -35,9 +36,9 @@ class CryptoManager:
         Solo este PC/usuario puede desencriptar la clave.
         """
         if not DPAPI_DISPONIBLE:
-            raise Exception(
-                "DPAPI no disponible. La encriptación requiere pywin32.\n"
-                "Instalar con: pip install pywin32"
+            raise DPAPIError(
+                operation="inicialización",
+                original_error="pywin32 no disponible. Instalar con: pip install pywin32"
             )
 
         # Intentar obtener clave protegida con DPAPI (nuevo formato)
@@ -59,13 +60,13 @@ class CryptoManager:
                 # CryptUnprotectData retorna (descripción, datos)
                 return clave_desencriptada[1].decode('utf-8')
             except pywintypes.error as e:
-                raise Exception(
-                    f"[CRYPTO ERROR] No se pudo desencriptar la clave maestra.\n"
-                    f"Posibles causas:\n"
-                    f"  - La BD fue copiada desde otro ordenador\n"
-                    f"  - Se reinstalo Windows sin backup de claves\n"
-                    f"  - Cambio el usuario de Windows\n"
-                    f"Error técnico: {e}"
+                raise DPAPIError(
+                    operation="desencriptación de clave maestra",
+                    original_error=(
+                        f"Posibles causas: BD copiada de otro PC, "
+                        f"Windows reinstalado, o cambio de usuario. "
+                        f"Error técnico: {e}"
+                    )
                 )
 
         # Si existe clave antigua sin protección DPAPI, migrarla automáticamente

@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, date
 from config import calcular_desglose_iva
 from app.utils.logger import get_logger
+from app.exceptions import DatabaseQueryError
 
 # Logger para el módulo TPV
 logger = get_logger('caja_tpv')
@@ -54,7 +55,7 @@ class CajaTpvManager:
         """
         # TRANSACCIÓN EXPLÍCITA para atomicidad real
         if not self.db.begin_transaction():
-            raise Exception("No se pudo iniciar transacción para generar ticket")
+            raise DatabaseQueryError(original_error="No se pudo iniciar transacción para generar ticket")
 
         try:
             # Intentar actualizar atómicamente dentro de la transacción
@@ -84,7 +85,7 @@ class CajaTpvManager:
 
         except sqlite3.Error as e:
             self.db.rollback()
-            raise Exception(f"Error generando ticket: {str(e)}")
+            raise DatabaseQueryError(original_error=f"Error generando ticket: {str(e)}")
     
     def validar_stock_disponible(self, items):
         """
@@ -299,7 +300,7 @@ class CajaTpvManager:
         )
 
         if not resultado:
-            raise Exception("No se pudo registrar el movimiento de caja")
+            raise DatabaseQueryError(original_error="No se pudo registrar el movimiento de caja")
 
         return resultado
     
@@ -440,7 +441,7 @@ class CajaTpvManager:
         except sqlite3.Error as e:
             logger.error(f"Error revirtiendo movimiento de caja: {e}", exc_info=True)
             # PROPAGAR la excepción para que la transacción se revierta completamente
-            raise Exception(f"No se pudo revertir movimiento de caja: {str(e)}")
+            raise DatabaseQueryError(original_error=f"No se pudo revertir movimiento de caja: {str(e)}")
     
     # === Gestión de Favoritos ===
     
@@ -453,7 +454,7 @@ class CajaTpvManager:
             ORDER BY pf.orden, pf.id
         """)
     
-    def agregar_favorito(self, producto_id=None, nombre=None, precio=None, color='#3498db'):
+    def agregar_favorito(self, producto_id=None, nombre=None, precio=None, color='#5E81AC'):
         """Agrega un producto a favoritos"""
         try:
             if producto_id:

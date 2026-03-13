@@ -4,9 +4,10 @@ Incluye: Establecimiento, Impresoras, Usuarios
 """
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QTabWidget, QFormLayout, QGroupBox,
-                             QComboBox, QMessageBox, QFileDialog, QCheckBox)
+                             QComboBox, QFileDialog, QCheckBox)
 from PyQt5.QtPrintSupport import QPrinterInfo
 from PyQt5.QtCore import Qt
+from app.utils.notify import notify_success, notify_error, notify_warning, ask_confirm
 from app.i18n import tr
 from app.db.database import Database
 from app.ui.usuarios_tab import UsuariosTab
@@ -86,7 +87,7 @@ class ConfiguracionTab(QWidget):
 
         # Opción de doble cara
         self.printer_duplex = QCheckBox(tr("Imprimir a doble cara (si la impresora lo soporta)"))
-        self.printer_duplex.setStyleSheet("margin-left: 20px; color: #2c3e50;")
+        self.printer_duplex.setStyleSheet("margin-left: 20px; color: #2E3440;")
         form_printers.addRow("", self.printer_duplex)
 
         form_printers.addRow(QLabel(""))  # Separador
@@ -178,16 +179,16 @@ class ConfiguracionTab(QWidget):
         # Auto-login
         self.check_autologin = QCheckBox(tr("Inicio de sesión automático"))
         self.check_autologin.setToolTip(tr("Inicia sesión automáticamente al abrir el programa"))
-        self.check_autologin.setStyleSheet("color: #e67e22; font-weight: bold;")
+        self.check_autologin.setStyleSheet("color: #D08770; font-weight: bold;")
         form_login.addRow(self.check_autologin)
 
         # Advertencia
         warning = QLabel("⚠️ " + tr("El auto-login guarda las credenciales localmente.") + "\n" +
                         tr("No lo actives en ordenadores compartidos."))
         warning.setStyleSheet("""
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffc107;
+            background-color: rgba(235, 203, 139, 0.15);
+            color: #EBCB8B;
+            border: 1px solid #EBCB8B;
             border-radius: 5px;
             padding: 10px;
             font-size: 10px;
@@ -213,7 +214,7 @@ class ConfiguracionTab(QWidget):
 
         # Info
         info_proteccion = QLabel("🔒 " + tr("Operaciones protegidas: eliminar ventas, compras, reparaciones, clientes, productos, etc."))
-        info_proteccion.setStyleSheet("color: #7f8c8d; font-size: 10px;")
+        info_proteccion.setStyleSheet("color: #7B88A0; font-size: 10px;")
         info_proteccion.setWordWrap(True)
         form_proteccion.addRow(info_proteccion)
 
@@ -228,7 +229,7 @@ class ConfiguracionTab(QWidget):
             tr("La llave de recuperación permite restablecer tu contraseña si la olvidas.") + "\n" +
             tr("Guárdala en un lugar seguro.")
         )
-        info_recovery.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        info_recovery.setStyleSheet("color: #7B88A0; font-size: 11px;")
         info_recovery.setWordWrap(True)
         form_recovery.addWidget(info_recovery)
 
@@ -248,7 +249,7 @@ class ConfiguracionTab(QWidget):
         form_recovery.addWidget(btn_ver_llave)
         
         # Botón para regenerar llave
-        btn_regenerar = QPushButton("🔄 " + tr("Regenerar Llave (genera una nueva)"))
+        btn_regenerar = QPushButton(tr("Regenerar Llave (genera una nueva)"))
         btn_regenerar.clicked.connect(self.regenerar_llave_actual)
         btn_regenerar.setStyleSheet("""
             QPushButton {
@@ -273,6 +274,7 @@ class ConfiguracionTab(QWidget):
         self.combo_idioma.addItem(tr("Español"), "es")
         self.combo_idioma.addItem(tr("English"), "en")
         self.combo_idioma.addItem(tr("Français"), "fr")
+        self.combo_idioma.addItem(tr("Português"), "pt")
         form_regional.addRow(tr("Idioma") + ":", self.combo_idioma)
         
         group_regional.setLayout(form_regional)
@@ -298,38 +300,36 @@ class ConfiguracionTab(QWidget):
     def mostrar_llave_actual(self):
         """Muestra la llave de recuperación del usuario actual"""
         if not self.auth_manager.usuario_actual:
-            QMessageBox.warning(self, tr("Error"), tr("No hay usuario logueado"))
+            notify_warning(self, tr("Error"), tr("No hay usuario logueado"))
             return
 
         llave = self.auth_manager.obtener_llave_usuario(self.auth_manager.usuario_actual['id'])
         if llave:
-            QMessageBox.information(self, tr("Tu Llave de Recuperación"),
+            notify_success(self, tr("Tu Llave de Recuperación"),
                 f"🔑 {tr('Tu llave es')}:\n\n{llave}\n\n" +
                 tr("Guárdala en un lugar seguro.") + "\n" +
                 tr("La necesitarás si olvidas tu contraseña."))
         else:
-            QMessageBox.warning(self, tr("Sin Llave"), tr("No tienes llave de recuperación configurada"))
+            notify_warning(self, tr("Sin Llave"), tr("No tienes llave de recuperación configurada"))
 
     def regenerar_llave_actual(self):
         """Regenera la llave de recuperación del usuario actual"""
         if not self.auth_manager.usuario_actual:
-            QMessageBox.warning(self, tr("Error"), tr("No hay usuario logueado"))
+            notify_warning(self, tr("Error"), tr("No hay usuario logueado"))
             return
 
-        respuesta = QMessageBox.question(self, tr("Confirmar"),
-            tr("¿Regenerar tu llave de recuperación?") + "\n\n" +
-            tr("La llave anterior dejará de funcionar."),
-            QMessageBox.Yes | QMessageBox.No)
+        respuesta = ask_confirm(self, tr("Confirmar"), tr("¿Regenerar tu llave de recuperación?") + "\n\n" +
+            tr("La llave anterior dejará de funcionar."))
 
-        if respuesta == QMessageBox.Yes:
+        if respuesta:
             exito, nueva_llave, msg = self.auth_manager.regenerar_llave(
                 self.auth_manager.usuario_actual['id'])
             if exito:
-                QMessageBox.information(self, tr("Nueva Llave"),
+                notify_success(self, tr("Nueva Llave"),
                     f"🔑 {tr('Tu NUEVA llave es')}:\n\n{nueva_llave}\n\n" +
                     tr("¡Guárdala ahora! La llave anterior ya no funciona."))
             else:
-                QMessageBox.critical(self, tr("Error"), msg)
+                notify_error(self, tr("Error"), msg)
 
     def listar_escaneres_wia(self):
         """Intenta listar escáneres usando WIA (Windows Image Acquisition)"""
@@ -386,16 +386,25 @@ class ConfiguracionTab(QWidget):
             self._set_config('printer_duplex', '1' if self.printer_duplex.isChecked() else '0')
             self._set_config('scanner_device', self.scanner_device.currentText())
 
-            QMessageBox.information(self, tr("Guardado"),
+            notify_success(self, tr("Guardado"),
                 tr("Configuración de impresoras guardada correctamente."))
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, tr("Error"), tr("Error al guardar") + f": {e}")
+            notify_error(self, tr("Error"), tr("Error al guardar") + f": {e}")
 
     def guardar_seguridad(self):
         """Guarda la configuración de seguridad e idioma - requiere contraseña si protección activa"""
         try:
-            # Verificar si la protección está activada - pedir contraseña
+            from app.i18n import get_translator
+            idioma_code = self.combo_idioma.currentData()
+            translator = get_translator()
+            idioma_anterior = translator.get_language()
+            config_cambio = (idioma_anterior != idioma_code)
+
+            # Guardar idioma en bd primero (no requiere confirmación de contraseña)
+            self._set_config('idioma', idioma_code)
+
+            # Verificar si la protección está activada - pedir contraseña para el resto
             proteccion_actual = self._get_config('seguridad_proteccion_operaciones')
             if proteccion_actual == '1':
                 from app.ui.confirmar_accion_dialog import ConfirmarAccionDialog
@@ -407,41 +416,49 @@ class ConfiguracionTab(QWidget):
                     self
                 )
                 if dialog.exec_() != 1 or not dialog.accion_confirmada:
-                    return  # Cancelado
-
-            self._set_config('login_recordar_usuario', '1' if self.check_recordar_usuario.isChecked() else '0')
-
-            # Si se desactiva recordar usuario, también desactivar autologin
-            if not self.check_recordar_usuario.isChecked():
-                self.check_autologin.setChecked(False)
-                self._set_config('login_autologin', '0')
-                self._set_config('login_autologin_pwd', '')
+                    # El usuario canceló la autenticación.
+                    # Si había cambiado el idioma pero canceló lo demás, le preguntamos sobre reiniciar de todos modos
+                    pass # Seguimos al if config_cambio de abajo pero terminamos después
+                else:
+                    # Autenticación exitosa, guardar el resto
+                    self._guardar_resto_seguridad()
             else:
-                self._set_config('login_autologin', '1' if self.check_autologin.isChecked() else '0')
+                self._guardar_resto_seguridad()
 
-            # Guardar Protección de Operaciones
-            self._set_config('seguridad_proteccion_operaciones', '1' if self.check_proteccion_operaciones.isChecked() else '0')
-
-            # Guardar Idioma
-            from app.i18n import get_translator
-            idioma_code = self.combo_idioma.currentData()
-            self._set_config('idioma', idioma_code)
-
-            # Aplicar cambio de idioma inmediato
-            translator = get_translator()
-            config_cambio = False
-            if translator.get_language() != idioma_code:
-                translator.set_language(idioma_code)
-                config_cambio = True
-
-            msg = tr("Configuración de seguridad guardada correctamente.")
             if config_cambio:
-                msg += "\n\n" + tr("El idioma ha sido actualizado. Reinicia la aplicación para ver todos los cambios.")
-
-            QMessageBox.information(self, tr("Guardado"), msg)
+                # Ponemos el idioma nuevo en memoria SOLO para mostrar el prompt en el nuevo idioma
+                translator.set_language(idioma_code)
+                
+                # Preguntar si reiniciar
+                if ask_confirm(self, tr("Idioma"), tr("El idioma se ha actualizado. ¿Deseas reiniciar la aplicación ahora para aplicar los cambios completamente?")):
+                    from PyQt5.QtWidgets import QApplication
+                    app = QApplication.instance()
+                    for widget in app.topLevelWidgets():
+                        if widget.inherits("LogyXpertsPOS") or hasattr(widget, '_cerrando_sesion'):
+                            widget._cerrando_sesion = True
+                    
+                    # Salida con código 888 para reinicio interno sin login
+                    app.exit(888)
+                    return
+                else:
+                    # El usuario decidió no reiniciar ahora. El idioma ya está activo en memoria
+                    # y guardado en BD, así que las notificaciones dinámicas usarán el nuevo idioma.
+                    notify_success(self, tr("Guardado"), tr("Configuración de seguridad guardada correctamente."))
+            else:
+                notify_success(self, tr("Guardado"), tr("Configuración de seguridad guardada correctamente."))
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, tr("Error"), tr("Error al guardar") + f": {e}")
+            notify_error(self, tr("Error"), tr("Error al guardar") + f": {e}")
+
+    def _guardar_resto_seguridad(self):
+        self._set_config('login_recordar_usuario', '1' if self.check_recordar_usuario.isChecked() else '0')
+        if not self.check_recordar_usuario.isChecked():
+            self.check_autologin.setChecked(False)
+            self._set_config('login_autologin', '0')
+            self._set_config('login_autologin_pwd', '')
+        else:
+            self._set_config('login_autologin', '1' if self.check_autologin.isChecked() else '0')
+        self._set_config('seguridad_proteccion_operaciones', '1' if self.check_proteccion_operaciones.isChecked() else '0')
 
     def _guardar_proteccion_operaciones(self, state):
         """Guarda la configuración de protección - requiere contraseña si está activada"""
@@ -483,10 +500,10 @@ class ConfiguracionTab(QWidget):
         """Imprime una prueba en la impresora seleccionada"""
         printer_name = self.printer_general.currentText()
         if "---" in printer_name:
-            QMessageBox.warning(self, tr("Aviso"), tr("Selecciona una impresora general primero"))
+            notify_warning(self, tr("Aviso"), tr("Selecciona una impresora general primero"))
             return
 
-        QMessageBox.information(self, tr("Test"), tr("Enviando prueba a") + f": {printer_name}\n(" + tr("Funcionalidad simulada") + ")")
+        notify_success(self, tr("Test"), tr("Enviando prueba a") + f": {printer_name}\n(" + tr("Funcionalidad simulada") + ")")
 
     def refrescar_escaneres(self):
         """Refresca la lista de escáneres disponibles"""
@@ -497,10 +514,10 @@ class ConfiguracionTab(QWidget):
         scanners = self.listar_escaneres_wia()
         if scanners:
             self.scanner_device.addItems(scanners)
-            QMessageBox.information(self, tr("Escáneres"), tr("Se detectaron") + f" {len(scanners)} " + tr("escáner(es)"))
+            notify_success(self, tr("Escáneres"), tr("Se detectaron") + f" {len(scanners)} " + tr("escáner(es)"))
         else:
             self.scanner_device.addItem(tr("No se detectaron escáneres"))
-            QMessageBox.warning(self, tr("Escáneres"),
+            notify_warning(self, tr("Escáneres"),
                 tr("No se detectaron escáneres.") + "\n\n" +
                 tr("Asegúrate de que") + ":\n" +
                 "• " + tr("El escáner está encendido y conectado") + "\n" +
@@ -523,7 +540,7 @@ class ConfiguracionTab(QWidget):
         """Prueba el escáner seleccionado"""
         scanner_name = self.scanner_device.currentText()
         if "---" in scanner_name or tr("No se detectaron") in scanner_name:
-            QMessageBox.warning(self, tr("Aviso"), tr("Selecciona un escáner primero"))
+            notify_warning(self, tr("Aviso"), tr("Selecciona un escáner primero"))
             return
 
         try:
@@ -541,15 +558,15 @@ class ConfiguracionTab(QWidget):
                     break
 
             if device:
-                QMessageBox.information(self, tr("Escáner OK"),
+                notify_success(self, tr("Escáner OK"),
                     f"✅ {tr('Conexión exitosa con')}:\n{scanner_name}\n\n" +
                     tr("El escáner está listo para usar."))
             else:
-                QMessageBox.warning(self, tr("Error"),
+                notify_warning(self, tr("Error"),
                     tr("No se pudo conectar con el escáner") + f":\n{scanner_name}")
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, tr("Error"),
+            notify_error(self, tr("Error"),
                 tr("Error al probar escáner") + f":\n{str(e)}\n\n" +
                 tr("Asegúrate de que el escáner está conectado y encendido."))
 

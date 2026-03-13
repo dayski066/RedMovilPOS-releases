@@ -3,7 +3,7 @@ Utilidad de debounce para PyQt5
 Retrasa la ejecución de funciones para evitar llamadas excesivas
 Útil para búsquedas en tiempo real mientras el usuario escribe
 """
-import sqlite3
+# sqlite3 no se usa en este módulo
 from PyQt5.QtCore import QTimer
 from app.utils.logger import logger
 
@@ -70,7 +70,7 @@ class Debouncer:
         if self._pending_func:
             try:
                 self._pending_func(*self._pending_args, **self._pending_kwargs)
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except Exception as e:
                 logger.error(f"Error ejecutando función debounce: {e}")
             finally:
                 # Limpiar
@@ -154,7 +154,7 @@ class ThrottledDebouncer:
         if self._pending_func:
             try:
                 self._pending_func(*self._pending_args, **self._pending_kwargs)
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except Exception as e:
                 logger.error(f"Error en throttle: {e}")
 
     def _ejecutar_debounce(self):
@@ -162,7 +162,7 @@ class ThrottledDebouncer:
         if self._pending_func:
             try:
                 self._pending_func(*self._pending_args, **self._pending_kwargs)
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except Exception as e:
                 logger.error(f"Error en debounce: {e}")
             finally:
                 self._pending_func = None

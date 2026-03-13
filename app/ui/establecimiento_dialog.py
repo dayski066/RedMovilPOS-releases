@@ -2,9 +2,12 @@
 Diálogo para crear/editar establecimientos
 """
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QMessageBox, QFormLayout, QFileDialog, QFrame)
+                             QPushButton, QFormLayout, QFileDialog, QFrame)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
+from app.utils.notify import notify_success, notify_error, notify_warning
+from app.ui.transparent_buttons import apply_btn_primary, apply_btn_danger, apply_btn_success, apply_btn_cancel
+from app.i18n import tr
 import os
 import shutil
 from app.utils.logger import logger
@@ -27,9 +30,9 @@ class EstablecimientoDialog(QDialog):
         self.logo_path = None  # Ruta del logo seleccionado
 
         if es_inicial:
-            self.setWindowTitle("Configurar Establecimiento")
+            self.setWindowTitle(tr("Configurar Establecimiento"))
         else:
-            self.setWindowTitle("Nuevo Establecimiento" if not establecimiento else "Editar Establecimiento")
+            self.setWindowTitle(tr("Nuevo Establecimiento") if not establecimiento else tr("Editar Establecimiento"))
 
         self.setModal(True)
         self.setMinimumWidth(550)
@@ -50,13 +53,13 @@ class EstablecimientoDialog(QDialog):
             icon.setAlignment(Qt.AlignCenter)
             layout.addWidget(icon)
 
-            title = QLabel("Configura tu Establecimiento")
+            title = QLabel(tr("Configura tu Establecimiento"))
             title.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
             title.setAlignment(Qt.AlignCenter)
             layout.addWidget(title)
 
-            subtitle = QLabel("Estos datos aparecerán en facturas, tickets y documentos.")
-            subtitle.setStyleSheet("font-size: 11px; color: #7f8c8d;")
+            subtitle = QLabel(tr("Estos datos aparecerán en facturas, tickets y documentos."))
+            subtitle.setStyleSheet("font-size: 11px; color: #7B88A0;")
             subtitle.setAlignment(Qt.AlignCenter)
             subtitle.setWordWrap(True)
             layout.addWidget(subtitle)
@@ -69,33 +72,52 @@ class EstablecimientoDialog(QDialog):
 
         # Nombre (obligatorio)
         self.nombre_input = QLineEdit()
-        self.nombre_input.setPlaceholderText("Ej: Mi Tienda de Móviles")
+        self.nombre_input.setPlaceholderText(tr("Ej: Mi Tienda de Móviles"))
         self.nombre_input.setMinimumHeight(38)
-        form_layout.addRow("Nombre *:", self.nombre_input)
+        form_layout.addRow(tr("Nombre *:"), self.nombre_input)
 
         # NIF/CIF
         self.nif_input = QLineEdit()
-        self.nif_input.setPlaceholderText("Ej: B12345678")
+        self.nif_input.setPlaceholderText(tr("Ej: B12345678"))
         self.nif_input.setMinimumHeight(38)
-        form_layout.addRow("NIF/CIF:", self.nif_input)
+        form_layout.addRow(tr("NIF/CIF:"), self.nif_input)
 
         # Dirección
         self.direccion_input = QLineEdit()
-        self.direccion_input.setPlaceholderText("Ej: Calle Mayor 123, Madrid")
+        self.direccion_input.setPlaceholderText(tr("Ej: Calle Mayor 123"))
         self.direccion_input.setMinimumHeight(38)
-        form_layout.addRow("Dirección:", self.direccion_input)
+        form_layout.addRow(tr("Dirección:"), self.direccion_input)
+
+        # CP y Ciudad en una misma fila
+        cp_ciudad_layout = QHBoxLayout()
+        self.cp_input = QLineEdit()
+        self.cp_input.setPlaceholderText(tr("Ej: 28001"))
+        self.cp_input.setMinimumHeight(38)
+        self.cp_input.setMaximumWidth(120)
+        self.ciudad_input = QLineEdit()
+        self.ciudad_input.setPlaceholderText(tr("Ej: Madrid"))
+        self.ciudad_input.setMinimumHeight(38)
+        cp_ciudad_layout.addWidget(self.cp_input)
+        cp_ciudad_layout.addWidget(self.ciudad_input)
+        form_layout.addRow(tr("C.P. / Ciudad:"), cp_ciudad_layout)
+
+        # Provincia
+        self.provincia_input = QLineEdit()
+        self.provincia_input.setPlaceholderText(tr("Ej: Madrid"))
+        self.provincia_input.setMinimumHeight(38)
+        form_layout.addRow(tr("Provincia:"), self.provincia_input)
 
         # Teléfono
         self.telefono_input = QLineEdit()
-        self.telefono_input.setPlaceholderText("Ej: 912345678")
+        self.telefono_input.setPlaceholderText(tr("Ej: 912345678"))
         self.telefono_input.setMinimumHeight(38)
-        form_layout.addRow("Teléfono:", self.telefono_input)
+        form_layout.addRow(tr("Teléfono:"), self.telefono_input)
 
         # Email
         self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("Ej: info@mitienda.com")
+        self.email_input.setPlaceholderText(tr("Ej: info@mitienda.com"))
         self.email_input.setMinimumHeight(38)
-        form_layout.addRow("Email:", self.email_input)
+        form_layout.addRow(tr("Email:"), self.email_input)
 
         layout.addLayout(form_layout)
 
@@ -103,16 +125,16 @@ class EstablecimientoDialog(QDialog):
         logo_group = QFrame()
         logo_group.setStyleSheet("""
             QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
+                background-color: #3B4252;
+                border: 1px solid #4C566A;
                 border-radius: 8px;
                 padding: 10px;
             }
         """)
         logo_layout = QVBoxLayout(logo_group)
 
-        logo_header = QLabel("Logo del Establecimiento")
-        logo_header.setStyleSheet("font-weight: bold; color: #2c3e50; border: none;")
+        logo_header = QLabel(tr("Logo del Establecimiento"))
+        logo_header.setStyleSheet("font-weight: bold; color: #ECEFF4; border: none;")
         logo_layout.addWidget(logo_header)
 
         logo_content = QHBoxLayout()
@@ -121,42 +143,26 @@ class EstablecimientoDialog(QDialog):
         self.logo_preview = QLabel()
         self.logo_preview.setFixedSize(100, 100)
         self.logo_preview.setStyleSheet("""
-            background-color: #2d2d30;
-            border: 2px dashed #3e3e42;
+            background-color: #2E3440;
+            border: 2px dashed #4C566A;
             border-radius: 5px;
-            color: #969696;
+            color: #7B88A0;
         """)
         self.logo_preview.setAlignment(Qt.AlignCenter)
-        self.logo_preview.setText("Sin logo")
+        self.logo_preview.setText(tr("Sin logo"))
         logo_content.addWidget(self.logo_preview)
 
         # Botones de logo
         logo_buttons = QVBoxLayout()
 
-        btn_seleccionar = QPushButton("📁 Seleccionar Logo")
+        btn_seleccionar = QPushButton("📁 " + tr("Seleccionar Logo"))
         btn_seleccionar.clicked.connect(self.seleccionar_logo)
-        btn_seleccionar.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC;
-                padding: 8px 15px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; }
-        """)
+        apply_btn_primary(btn_seleccionar)
         logo_buttons.addWidget(btn_seleccionar)
 
-        btn_quitar = QPushButton("🗑️ Quitar Logo")
+        btn_quitar = QPushButton("🗑️ " + tr("Quitar Logo"))
         btn_quitar.clicked.connect(self.quitar_logo)
-        btn_quitar.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #BF616A; border: 2px solid #BF616A;
-                padding: 8px 15px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: transparent; color: #BF616A; border: 2px solid #BF616A; }
-        """)
+        apply_btn_danger(btn_quitar)
         logo_buttons.addWidget(btn_quitar)
 
         logo_buttons.addStretch()
@@ -165,8 +171,8 @@ class EstablecimientoDialog(QDialog):
 
         logo_layout.addLayout(logo_content)
 
-        info_logo = QLabel("Formatos: PNG, JPG. Tamaño recomendado: 200x200px")
-        info_logo.setStyleSheet("font-size: 10px; color: #7f8c8d; border: none;")
+        info_logo = QLabel(tr("Formatos: PNG, JPG. Tamaño recomendado: 200x200px"))
+        info_logo.setStyleSheet("font-size: 10px; color: #7B88A0; border: none;")
         logo_layout.addWidget(info_logo)
 
         layout.addWidget(logo_group)
@@ -174,14 +180,15 @@ class EstablecimientoDialog(QDialog):
         # Info
         if self.es_inicial:
             info = QLabel(
-                "💡 Podrás modificar estos datos más tarde desde Ajustes > Establecimientos."
+                "💡 " + tr("Podrás modificar estos datos más tarde desde Ajustes > Establecimientos.")
             )
             info.setStyleSheet("""
-                background-color: #e8f5e9;
+                background-color: rgba(163, 190, 140, 0.12);
                 padding: 12px;
                 border-radius: 5px;
                 font-size: 11px;
-                color: #2e7d32;
+                color: #A3BE8C;
+                border: 1px solid #A3BE8C;
             """)
             info.setWordWrap(True)
             layout.addWidget(info)
@@ -193,49 +200,26 @@ class EstablecimientoDialog(QDialog):
         btn_layout.addStretch()
 
         if not self.es_inicial:
-            btn_cancelar = QPushButton("Cancelar")
+            btn_cancelar = QPushButton(tr("Cancelar"))
             btn_cancelar.clicked.connect(self.reject)
-            btn_cancelar.setStyleSheet("background-color: transparent; color: #5E6B7D; border: 2px solid #5E6B7D; border-radius: 6px; padding: 10px 20px;")
+            apply_btn_cancel(btn_cancelar)
             btn_layout.addWidget(btn_cancelar)
 
-        btn_text = "Guardar y Continuar" if self.es_inicial else "Guardar"
+        btn_text = tr("Guardar y Continuar") if self.es_inicial else tr("Guardar")
         btn_guardar = QPushButton(btn_text)
         btn_guardar.clicked.connect(self.guardar)
-        btn_guardar.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C;
-                font-weight: bold;
-                padding: 12px 25px;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover { background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C; }
-        """)
+        apply_btn_success(btn_guardar)
         btn_layout.addWidget(btn_guardar)
 
         layout.addLayout(btn_layout)
-
-        # Estilos - DARK MODE
-        self.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #cccccc; }
-            QLineEdit {
-                padding: 8px 12px;
-                border: 2px solid #3e3e42;
-                border-radius: 5px;
-                background-color: #3c3c3c;
-                color: #ffffff;
-            }
-            QLineEdit:focus { border: 2px solid #007acc; }
-        """)
 
     def seleccionar_logo(self):
         """Abre diálogo para seleccionar logo"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar Logo",
+            tr("Seleccionar Logo"),
             "",
-            "Imágenes (*.png *.jpg *.jpeg *.bmp)"
+            tr("Imágenes") + " (*.png *.jpg *.jpeg *.bmp)"
         )
 
         if file_path:
@@ -246,12 +230,12 @@ class EstablecimientoDialog(QDialog):
         """Quita el logo seleccionado"""
         self.logo_path = ""  # String vacío indica quitar logo
         self.logo_preview.setPixmap(QPixmap())
-        self.logo_preview.setText("Sin logo")
+        self.logo_preview.setText(tr("Sin logo"))
         self.logo_preview.setStyleSheet("""
-            background-color: #2d2d30;
-            border: 2px dashed #3e3e42;
+            background-color: #2E3440;
+            border: 2px dashed #4C566A;
             border-radius: 5px;
-            color: #969696;
+            color: #7B88A0;
         """)
 
     def mostrar_preview_logo(self, path):
@@ -264,7 +248,7 @@ class EstablecimientoDialog(QDialog):
                 self.logo_preview.setText("")
                 self.logo_preview.setStyleSheet("""
                     background-color: white;
-                    border: 2px solid #27ae60;
+                    border: 2px solid #A3BE8C;
                     border-radius: 5px;
                 """)
 
@@ -273,6 +257,9 @@ class EstablecimientoDialog(QDialog):
         self.nombre_input.setText(self.establecimiento.get('nombre', ''))
         self.nif_input.setText(self.establecimiento.get('nif', '') or '')
         self.direccion_input.setText(self.establecimiento.get('direccion', '') or '')
+        self.cp_input.setText(self.establecimiento.get('cp', '') or '')
+        self.ciudad_input.setText(self.establecimiento.get('ciudad', '') or '')
+        self.provincia_input.setText(self.establecimiento.get('provincia', '') or '')
         self.telefono_input.setText(self.establecimiento.get('telefono', '') or '')
         self.email_input.setText(self.establecimiento.get('email', '') or '')
 
@@ -308,13 +295,16 @@ class EstablecimientoDialog(QDialog):
         nombre = self.nombre_input.text().strip()
 
         if not nombre:
-            QMessageBox.warning(self, "Error", "El nombre del establecimiento es obligatorio")
+            notify_warning(self, tr("Error"), tr("El nombre del establecimiento es obligatorio"))
             return
 
         datos = {
             'nombre': nombre,
             'nif': self.nif_input.text().strip() or None,
             'direccion': self.direccion_input.text().strip() or None,
+            'cp': self.cp_input.text().strip() or None,
+            'ciudad': self.ciudad_input.text().strip() or None,
+            'provincia': self.provincia_input.text().strip() or None,
             'telefono': self.telefono_input.text().strip() or None,
             'email': self.email_input.text().strip() or None
         }
@@ -333,22 +323,24 @@ class EstablecimientoDialog(QDialog):
 
                 query = """
                     UPDATE establecimientos
-                    SET nombre = ?, nif = ?, direccion = ?, telefono = ?, email = ?, logo_path = ?
+                    SET nombre = ?, nif = ?, direccion = ?, cp = ?, ciudad = ?, provincia = ?, telefono = ?, email = ?, logo_path = ?
                     WHERE id = ?
                 """
                 self.db.execute_query(query, (
                     datos['nombre'], datos['nif'], datos['direccion'],
+                    datos['cp'], datos['ciudad'], datos['provincia'],
                     datos['telefono'], datos['email'], logo_final,
                     self.establecimiento['id']
                 ))
             else:
                 # Crear nuevo
                 query = """
-                    INSERT INTO establecimientos (nombre, nif, direccion, telefono, email)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO establecimientos (nombre, nif, direccion, cp, ciudad, provincia, telefono, email)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 self.establecimiento_id = self.db.execute_query(query, (
                     datos['nombre'], datos['nif'], datos['direccion'],
+                    datos['cp'], datos['ciudad'], datos['provincia'],
                     datos['telefono'], datos['email']
                 ))
 
@@ -363,13 +355,13 @@ class EstablecimientoDialog(QDialog):
 
             if self.establecimiento_id:
                 if not self.es_inicial:
-                    QMessageBox.information(self, "Éxito", "Establecimiento guardado correctamente")
+                    notify_success(self, tr("Éxito"), tr("Establecimiento guardado correctamente"))
                 self.accept()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo guardar el establecimiento")
+                notify_error(self, tr("Error"), tr("No se pudo guardar el establecimiento"))
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, "Error", f"Error al guardar: {e}")
+            notify_error(self, tr("Error"), tr("Error al guardar: {error}", error=str(e)))
 
     def obtener_establecimiento_id(self):
         """Retorna el ID del establecimiento creado/editado"""

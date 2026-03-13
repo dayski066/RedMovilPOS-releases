@@ -72,7 +72,7 @@ class DatabaseOptimizer:
                 ORDER BY m.name, il.name
             """)
             return indices
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error obteniendo índices: {e}")
             return []
 
@@ -334,7 +334,7 @@ class DatabaseOptimizer:
             )
             logger.info(f"{nombre_indice} creado en {tabla}({columna})")
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error creando {nombre_indice}: {e}")
 
     def _crear_indice_compuesto_si_no_existe(self, nombre_indice, tabla, columnas):
@@ -382,7 +382,7 @@ class DatabaseOptimizer:
             )
             logger.info(f"{nombre_indice} creado en {tabla}({columnas_str})")
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error creando {nombre_indice}: {e}")
 
     def optimizar_todas_las_tablas(self):
@@ -416,7 +416,7 @@ class DatabaseOptimizer:
         try:
             self.db.execute_query("ANALYZE")
             logger.info("ANALYZE completado")
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error en ANALYZE: {e}")
 
         # Mostrar estadísticas finales
@@ -436,13 +436,19 @@ class DatabaseOptimizer:
         """
         Elimina un índice de la base de datos
 
+        SEGURIDAD: Valida el nombre del índice contra el patrón de identificador.
+
         Args:
             nombre_indice: Nombre del índice a eliminar
         """
+        # SEGURIDAD: Validar nombre contra patrón de identificador
+        if not self._validar_identificador(nombre_indice):
+            logger.error(f"Nombre de índice no válido: {nombre_indice}")
+            return
         try:
             self.db.execute_query(f"DROP INDEX IF EXISTS {nombre_indice}")
             logger.info(f"Indice {nombre_indice} eliminado")
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error eliminando indice: {e}")
 
     def obtener_estadisticas_tabla(self, tabla):
@@ -481,6 +487,6 @@ class DatabaseOptimizer:
                 'indices': [idx['name'] for idx in indices]
             }
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error obteniendo estadisticas de {tabla}: {e}")
             return {'tabla': tabla, 'error': str(e)}

@@ -2,7 +2,7 @@
 Sistema de actualizaciones OTA para RedMovilPOS
 Comprueba actualizaciones en GitHub Releases y las descarga de forma segura
 """
-import sqlite3
+# sqlite3 no se usa en este módulo
 import os
 import sys
 import json
@@ -154,7 +154,7 @@ class Updater:
                         )
                         with urlopen(sha_request, timeout=10) as sha_response:
                             sha256 = sha_response.read().decode('utf-8').strip().split()[0]
-                    except (sqlite3.Error, OSError, ValueError):
+                    except (URLError, ValueError):
                         pass
                     break
 
@@ -194,7 +194,7 @@ class Updater:
         except json.JSONDecodeError as e:
             logger.error(f"Error parseando respuesta de GitHub: {e}")
             return None
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (URLError, OSError) as e:
             logger.error(f"Error comprobando actualizaciones: {e}", exc_info=True)
             return None
 
@@ -258,7 +258,7 @@ class Updater:
 
             return download_path
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (URLError, OSError) as e:
             logger.error(f"Error descargando actualización: {e}", exc_info=True)
             return None
 
@@ -319,7 +319,7 @@ class Updater:
                 logger.error("Formato de instalador no soportado")
                 return False
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except OSError as e:
             logger.error(f"Error ejecutando instalador: {e}", exc_info=True)
             return False
 
@@ -370,7 +370,7 @@ class Updater:
 
             return True, installer_path
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             logger.error(f"Error en proceso de actualización: {e}", exc_info=True)
             return False, f"Error: {str(e)}"
 
@@ -385,7 +385,7 @@ class Updater:
                     if age_days > 7:
                         os.remove(filepath)
                         logger.info(f"Eliminado archivo antiguo: {filename}")
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except OSError as e:
             logger.warning(f"Error limpiando descargas antiguas: {e}")
 
 

@@ -8,8 +8,10 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
 from config import APP_VERSION, APP_NAME
+from app.i18n import tr
 from app.db.database import Database
 from app.utils.logger import logger
+from app.ui.transparent_buttons import apply_btn_success
 
 
 # Notas de cada versión (changelog)
@@ -129,7 +131,7 @@ class ChangelogDialog(QDialog):
         self.setup_ui()
 
     def setup_ui(self):
-        self.setWindowTitle(f"Novedades - {APP_NAME}")
+        self.setWindowTitle(tr("Novedades - {app}", app=APP_NAME))
         self.setMinimumWidth(550)
         self.setMinimumHeight(450)
         self.setModal(True)
@@ -147,13 +149,13 @@ class ChangelogDialog(QDialog):
 
         title_layout = QVBoxLayout()
 
-        title_label = QLabel(f"¡Bienvenido a {APP_NAME} v{self.version}!")
+        title_label = QLabel(tr("¡Bienvenido a {app} v{version}!", app=APP_NAME, version=self.version))
         title_label.setFont(QFont("", 16, QFont.Bold))
-        title_label.setStyleSheet("color: #27ae60;")
+        title_label.setStyleSheet("color: #A3BE8C;")
         title_layout.addWidget(title_label)
 
-        subtitle = QLabel("Tu programa se ha actualizado correctamente")
-        subtitle.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        subtitle = QLabel(tr("Tu programa se ha actualizado correctamente"))
+        subtitle.setStyleSheet("color: #7B88A0; font-size: 12px;")
         title_layout.addWidget(subtitle)
 
         header_layout.addLayout(title_layout)
@@ -164,11 +166,11 @@ class ChangelogDialog(QDialog):
         # === Separador ===
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("background-color: #3d4f5f;")
+        line.setStyleSheet("background-color: #434C5E;")
         layout.addWidget(line)
 
         # === Changelog ===
-        changelog_label = QLabel("¿Qué hay de nuevo?")
+        changelog_label = QLabel(tr("¿Qué hay de nuevo?"))
         changelog_label.setFont(QFont("", 11, QFont.Bold))
         layout.addWidget(changelog_label)
 
@@ -177,11 +179,11 @@ class ChangelogDialog(QDialog):
         self.changelog_text.setMarkdown(self._get_changelog())
         self.changelog_text.setStyleSheet("""
             QTextEdit {
-                background-color: #2d3e50;
-                border: 1px solid #3d4f5f;
+                background-color: #3B4252;
+                border: 1px solid #434C5E;
                 border-radius: 8px;
                 padding: 15px;
-                color: #ecf0f1;
+                color: #D8DEE9;
                 font-size: 13px;
             }
         """)
@@ -191,8 +193,8 @@ class ChangelogDialog(QDialog):
         footer_frame = QFrame()
         footer_frame.setStyleSheet("""
             QFrame {
-                background-color: #1a3a4a;
-                border: 1px solid #2980b9;
+                background-color: rgba(94, 129, 172, 0.15);
+                border: 1px solid #81A1C1;
                 border-radius: 5px;
                 padding: 10px;
             }
@@ -200,9 +202,9 @@ class ChangelogDialog(QDialog):
         footer_layout = QVBoxLayout(footer_frame)
         footer_layout.setContentsMargins(10, 10, 10, 10)
 
-        tip_label = QLabel("💡 Puedes buscar actualizaciones en cualquier momento desde el menú ☰ → Buscar Actualizaciones")
+        tip_label = QLabel(tr("Puedes buscar actualizaciones en cualquier momento desde el menú ☰ → Buscar Actualizaciones"))
         tip_label.setWordWrap(True)
-        tip_label.setStyleSheet("color: #3498db; border: none; font-size: 11px;")
+        tip_label.setStyleSheet("color: #5E81AC; border: none; font-size: 11px;")
         footer_layout.addWidget(tip_label)
 
         layout.addWidget(footer_frame)
@@ -211,20 +213,9 @@ class ChangelogDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        btn_ok = QPushButton("Entendido")
+        btn_ok = QPushButton(tr("Entendido"))
         btn_ok.clicked.connect(self.accept)
-        btn_ok.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                padding: 12px 40px;
-                border-radius: 5px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:hover { background-color: #2ecc71; }
-        """)
+        apply_btn_success(btn_ok)
         btn_layout.addWidget(btn_ok)
 
         layout.addLayout(btn_layout)
@@ -236,13 +227,11 @@ class ChangelogDialog(QDialog):
             return CHANGELOGS[self.version]
 
         # Si no hay changelog específico, mostrar mensaje genérico
-        return f"""
-## Versión {self.version}
-
-Gracias por actualizar {APP_NAME}.
-
-Esta versión incluye mejoras y correcciones de errores.
-"""
+        return (
+            f"## {tr('Versión')} {self.version}\n\n"
+            f"{tr('Gracias por actualizar {app}.', app=APP_NAME)}\n\n"
+            f"{tr('Esta versión incluye mejoras y correcciones de errores.')}\n"
+        )
 
 
 def marcar_version_vista(db: Database, version: str):

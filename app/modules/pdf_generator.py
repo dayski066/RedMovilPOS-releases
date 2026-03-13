@@ -19,6 +19,7 @@ from config import COMPANY_INFO as DEFAULT_COMPANY_INFO, IVA_RATE, PDF_DIR
 from app.utils.qr_generator import QRGenerator
 from app.i18n import tr
 from app.utils.logger import logger
+from app.exceptions import PDFGenerationError
 
 
 class PDFGenerator:
@@ -59,11 +60,19 @@ class PDFGenerator:
 
             # Si hay un establecimiento, usar sus datos
             if establecimiento:
+                cp = establecimiento.get('cp') or ''
+                ciudad = establecimiento.get('ciudad') or ''
+                provincia = establecimiento.get('provincia') or ''
+                cp_ciudad = ' '.join(filter(None, [cp, ciudad]))
+                if provincia:
+                    city = f"{cp_ciudad}, {provincia}" if cp_ciudad else provincia
+                else:
+                    city = cp_ciudad
                 return {
                     'name': establecimiento.get('nombre') or '',
                     'nif': establecimiento.get('nif') or '',
                     'address': establecimiento.get('direccion') or '',
-                    'city': '',  # No hay campo ciudad en establecimientos
+                    'city': city,
                     'phone': establecimiento.get('telefono') or '',
                     'logo_path': establecimiento.get('logo_path') or ''
                 }
@@ -71,7 +80,7 @@ class PDFGenerator:
                 # Si no hay establecimiento en BD, usar los valores por defecto
                 return DEFAULT_COMPANY_INFO
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error cargando datos de establecimiento: {e}")
             return DEFAULT_COMPANY_INFO
 
@@ -109,7 +118,7 @@ class PDFGenerator:
                                width=logo_width, height=logo_height,
                                preserveAspectRatio=True, mask='auto')
                     y -= (logo_height + 2 * mm)
-                except (sqlite3.Error, OSError, ValueError):
+                except OSError:
                     pass  # Si falla el logo, continuar sin él
 
             # --- CABECERA ---
@@ -254,7 +263,7 @@ class PDFGenerator:
             c.save()
             return filename
             
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             logger.error(f"Error generando ticket: {e}")
             return None
 
@@ -283,7 +292,7 @@ class PDFGenerator:
                 except (PermissionError, IOError):
                     counter += 1
                     if counter > 100:  # Límite de seguridad
-                        raise Exception("No se puede crear archivo PDF único")
+                        raise PDFGenerationError("No se puede crear archivo PDF único")
 
     # ==================== FACTURA ====================
     def generar_factura(self, datos, factura_id):
@@ -318,12 +327,12 @@ class PDFGenerator:
     def _dibujar_cabecera_factura(self, c, datos, y):
         """Cabecera con empresa a la izquierda y datos factura a la derecha"""
         # Marco de cabecera (sin fondo para impresión B/N)
-        c.setStrokeColor(colors.HexColor('#1a252f'))
+        c.setStrokeColor(colors.HexColor('#2E3440'))
         c.setLineWidth(2)
         c.rect(0.5*cm, y - 3.5*cm, self.page_width - 1*cm, 3.5*cm, fill=False, stroke=True)
         
         # EMPRESA (Izquierda)
-        c.setFillColor(colors.HexColor('#1a252f'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 16)
         c.drawString(self.margin, y - 1.2*cm, self.company_info['name'])
         
@@ -337,10 +346,10 @@ class PDFGenerator:
         c.drawRightString(self.page_width - self.margin, y - 1.2*cm, tr("FACTURA"))
         
         c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.HexColor('#3498db'))
+        c.setFillColor(colors.HexColor('#5E81AC'))
         c.drawRightString(self.page_width - self.margin, y - 2*cm, f"Nº {datos['numero']}")
         
-        c.setFillColor(colors.HexColor('#1a252f'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica", 10)
         fecha_display = datos['fecha'].strftime('%d/%m/%Y') if hasattr(datos['fecha'], 'strftime') else str(datos['fecha'])
         c.drawRightString(self.page_width - self.margin, y - 2.6*cm, f"{tr('Fecha')}: {fecha_display}")
@@ -349,11 +358,11 @@ class PDFGenerator:
 
     def _dibujar_datos_cliente(self, c, cliente, y):
         """Datos del cliente sin tabla, solo texto"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("DATOS DEL CLIENTE"))
         
-        c.setStrokeColor(colors.HexColor('#3498db'))
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 4*cm, y - 0.2*cm)
         
@@ -381,6 +390,12 @@ class PDFGenerator:
         if ciudad:
             c.drawString(self.margin, y, f"{ciudad}")
             y -= 0.5*cm
+
+        provincia = cliente.get('provincia', '')
+        if provincia:
+            c.drawString(self.margin, y, f"{provincia}")
+            y -= 0.5*cm
+
         if cliente.get('telefono'):
             c.drawString(self.margin, y, f"Tel: {cliente['telefono']}")
             y -= 0.5*cm
@@ -389,11 +404,11 @@ class PDFGenerator:
 
     def _dibujar_tabla_items(self, c, items, y):
         """Tabla de artículos con estilo moderno"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("DETALLE DE ARTÍCULOS"))
         
-        c.setStrokeColor(colors.HexColor('#3498db'))
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 4.5*cm, y - 0.2*cm)
         
@@ -403,7 +418,7 @@ class PDFGenerator:
         col_widths = [8*cm, 3*cm, 1.5*cm, 2.5*cm, 2.5*cm]
         headers = [tr('Descripción'), 'IMEI/SN', tr('Cant.'), tr('P.Unit.'), tr('Total')]
         
-        c.setFillColor(colors.HexColor('#34495e'))
+        c.setFillColor(colors.HexColor('#434C5E'))
         c.rect(self.margin, y - 0.6*cm, self.usable_width, 0.7*cm, fill=True, stroke=False)
         
         c.setFillColor(colors.white)
@@ -427,7 +442,7 @@ class PDFGenerator:
             total_item = item['cantidad'] * item['precio']
             
             # Fondo alternado
-            c.setFillColor(colors.HexColor('#f8f9fa'))
+            c.setFillColor(colors.HexColor('#ECEFF4'))
             c.rect(self.margin, y - 0.5*cm, self.usable_width, 0.7*cm, fill=True, stroke=False)
             
             c.setFillColor(colors.black)
@@ -452,7 +467,7 @@ class PDFGenerator:
             y -= 0.7*cm
         
         # Línea final
-        c.setStrokeColor(colors.HexColor('#bdc3c7'))
+        c.setStrokeColor(colors.HexColor('#4C566A'))
         c.setLineWidth(1)
         c.line(self.margin, y, self.page_width - self.margin, y)
         
@@ -476,7 +491,7 @@ class PDFGenerator:
         y -= 0.7*cm
         c.setFont("Helvetica-Bold", 14)
         c.drawRightString(x_label, y, tr("Total").upper() + ":")
-        c.setFillColor(colors.HexColor('#27ae60'))
+        c.setFillColor(colors.HexColor('#A3BE8C'))
         c.drawRightString(x_value, y, f"{totales['total']:.2f} €")
         
         return y - 1*cm
@@ -486,6 +501,229 @@ class PDFGenerator:
         c.setFillColor(colors.grey)
         c.setFont("Helvetica", 8)
         c.drawCentredString(self.page_width / 2, 1.2*cm, f"{tr('Gracias por su confianza')}  •  {self.company_info['name']}")
+
+    # ==================== GARANTÍA ====================
+    _GARANTIA_MESES = {
+        'nuevo': 36,
+        'km0': 12,
+        'usado': 6,
+    }
+
+    def generar_garantia(self, datos, factura_id):
+        """Genera un PDF de garantía con tabla extendida (Estado/Garantía por dispositivo)
+        y términos generales de garantía UE al final."""
+        fecha_str = datos['fecha'].strftime('%Y-%m-%d') if hasattr(datos['fecha'], 'strftime') else str(datos['fecha'])
+        cliente_str = datos['cliente']['nombre'].replace(' ', '_')[:20]
+        filename = f"Garantia_{cliente_str}_{fecha_str}.pdf"
+        base_filepath = os.path.join(PDF_DIR, filename)
+        filepath = self._get_unique_filename(base_filepath)
+
+        c = canvas.Canvas(filepath, pagesize=A4)
+        y = self.page_height - self.margin
+
+        y = self._dibujar_cabecera_garantia(c, datos, y)
+        y = self._dibujar_datos_cliente(c, datos['cliente'], y)
+        y = self._dibujar_tabla_items_garantia(c, datos['items'], y)
+        y = self._dibujar_totales(c, datos['totales'], y)
+        y = self._dibujar_terminos_garantia_ue(c, y)
+        self._dibujar_pie_pagina(c)
+
+        c.save()
+        return filepath
+
+    def _dibujar_cabecera_garantia(self, c, datos, y):
+        """Cabecera igual que factura pero dice GARANTÍA y sin número de factura"""
+        c.setStrokeColor(colors.HexColor('#2E3440'))
+        c.setLineWidth(2)
+        c.rect(0.5*cm, y - 3.5*cm, self.page_width - 1*cm, 3.5*cm, fill=False, stroke=True)
+
+        # EMPRESA (Izquierda)
+        c.setFillColor(colors.HexColor('#2E3440'))
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(self.margin, y - 1.2*cm, self.company_info['name'])
+
+        c.setFont("Helvetica", 9)
+        c.drawString(self.margin, y - 1.8*cm, f"NIF: {self.company_info['nif']}  |  Tel: {self.company_info['phone']}")
+        c.drawString(self.margin, y - 2.3*cm, self.company_info['address'])
+        c.drawString(self.margin, y - 2.8*cm, self.company_info['city'])
+
+        # GARANTÍA (Derecha) — sin número de factura
+        c.setFont("Helvetica-Bold", 22)
+        c.drawRightString(self.page_width - self.margin, y - 1.2*cm, tr("GARANTÍA"))
+
+        c.setFillColor(colors.HexColor('#2E3440'))
+        c.setFont("Helvetica", 10)
+        fecha_display = datos['fecha'].strftime('%d/%m/%Y') if hasattr(datos['fecha'], 'strftime') else str(datos['fecha'])
+        c.drawRightString(self.page_width - self.margin, y - 2.6*cm, f"{tr('Fecha')}: {fecha_display}")
+
+        return y - 4.5*cm
+
+    def _dibujar_tabla_items_garantia(self, c, items, y):
+        """Tabla de artículos con columnas extra: Estado y Garantía"""
+        c.setFillColor(colors.HexColor('#2E3440'))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(self.margin, y, tr("DETALLE DE ARTÍCULOS"))
+
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
+        c.setLineWidth(2)
+        c.line(self.margin, y - 0.2*cm, self.margin + 4.5*cm, y - 0.2*cm)
+
+        y -= 0.8*cm
+
+        # Columnas: Descripción | IMEI/SN | Cant. | P.Unit. | Total | Estado | Garantía
+        # Total usable: 18cm  →  Descripción | IMEI/SN | Cant. | P.Unit. | Total | Estado | Garantía
+        col_widths = [5.5*cm, 3.0*cm, 1.2*cm, 2.2*cm, 2.2*cm, 2.1*cm, 1.8*cm]
+        headers = [
+            tr('Descripción'), 'IMEI/SN', tr('Cant.'), tr('P.Unit.'), tr('Total'),
+            tr('Estado'), tr('Garantía')
+        ]
+
+        # Cabecera tabla
+        c.setFillColor(colors.HexColor('#434C5E'))
+        c.rect(self.margin, y - 0.6*cm, self.usable_width, 0.7*cm, fill=True, stroke=False)
+
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 8)
+        # Índices de columnas numéricas (alineadas a la derecha igual que los datos)
+        right_aligned_cols = {2, 3, 4}  # Cant., P.Unit., Total
+        x = self.margin + 0.2*cm
+        for i, header in enumerate(headers):
+            if i in right_aligned_cols:
+                c.drawRightString(x + col_widths[i] - 0.3*cm, y - 0.4*cm, header)
+            else:
+                c.drawString(x, y - 0.4*cm, header)
+            x += col_widths[i]
+
+        y -= 0.8*cm
+
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 8)
+
+        for item in items:
+            if y < 4*cm:
+                c.showPage()
+                y = self.page_height - 2*cm
+
+            total_item = item['cantidad'] * item['precio']
+            estado_raw = (item.get('estado') or '').strip()
+            meses = self._GARANTIA_MESES.get(estado_raw.lower(), None)
+            garantia_txt = f"{meses} {tr('meses')}" if meses else tr('No especificado')
+            estado_display = estado_raw if estado_raw else tr('No especificado')
+
+            # Fondo alternado
+            c.setFillColor(colors.HexColor('#ECEFF4'))
+            c.rect(self.margin, y - 0.5*cm, self.usable_width, 0.7*cm, fill=True, stroke=False)
+
+            c.setFillColor(colors.black)
+            x = self.margin + 0.2*cm
+
+            desc = item['descripcion'][:32] + '…' if len(item['descripcion']) > 32 else item['descripcion']
+            c.drawString(x, y - 0.3*cm, desc)
+            x += col_widths[0]
+
+            imei = item.get('imei') or item.get('imei_sn') or '-'
+            c.drawString(x, y - 0.3*cm, str(imei)[:16] or '-')
+            x += col_widths[1]
+
+            c.drawRightString(x + col_widths[2] - 0.3*cm, y - 0.3*cm, str(item['cantidad']))
+            x += col_widths[2]
+
+            c.drawRightString(x + col_widths[3] - 0.3*cm, y - 0.3*cm, f"{item['precio']:.2f} €")
+            x += col_widths[3]
+
+            c.drawRightString(x + col_widths[4] - 0.3*cm, y - 0.3*cm, f"{total_item:.2f} €")
+            x += col_widths[4]
+
+            # Estado (centrado)
+            c.drawString(x + 0.1*cm, y - 0.3*cm, estado_display)
+            x += col_widths[5]
+
+            # Garantía en azul destacado
+            c.setFillColor(colors.HexColor('#5E81AC'))
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(x + 0.1*cm, y - 0.3*cm, garantia_txt)
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica", 8)
+
+            y -= 0.7*cm
+
+        # Línea final
+        c.setStrokeColor(colors.HexColor('#4C566A'))
+        c.setLineWidth(1)
+        c.line(self.margin, y, self.page_width - self.margin, y)
+
+        return y - 0.5*cm
+
+    def _dibujar_terminos_garantia_ue(self, c, y):
+        """Términos generales de garantía según la normativa europea"""
+        y -= 0.5*cm
+
+        # Salto de página si no hay espacio suficiente (necesitamos ~7cm)
+        if y < 7*cm:
+            c.showPage()
+            y = self.page_height - 2*cm
+
+        # Título
+        c.setFillColor(colors.HexColor('#2E3440'))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(self.margin, y, tr("TÉRMINOS GENERALES DE GARANTÍA — NORMATIVA EUROPEA"))
+
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
+        c.setLineWidth(2)
+        c.line(self.margin, y - 0.2*cm, self.page_width - self.margin, y - 0.2*cm)
+
+        y -= 0.8*cm
+
+        terminos = [
+            (tr("Garantía legal del consumidor (Dir. UE 2019/771):"),
+             tr("Todo bien de consumo está cubierto por una garantía legal mínima de 2 años desde la entrega, conforme a la Directiva (UE) 2019/771 del Parlamento Europeo.")),
+            (tr("Presunción de conformidad:"),
+             tr("Los defectos manifestados durante el primer año se presumen existentes en el momento de la entrega. A partir del segundo año, corresponde al consumidor demostrar que el defecto existía en la entrega.")),
+            (tr("Bienes de segunda mano:"),
+             tr("Para dispositivos usados (segunda mano), el plazo de garantía legal puede reducirse contractualmente a un mínimo de 1 año, conforme al art. 10.6 de la Directiva (UE) 2019/771.")),
+            (tr("Derechos del consumidor:"),
+             tr("El consumidor tiene derecho, en primer lugar, a la reparación o sustitución del bien defectuoso; si ello no fuera posible, a una reducción del precio o a la resolución del contrato.")),
+            (tr("Garantía comercial adicional:"),
+             tr("El período de garantía indicado en cada dispositivo es la garantía comercial ofrecida por el vendedor, independiente y compatible con la garantía legal.")),
+        ]
+
+        c.setFont("Helvetica", 7.5)
+        line_h = 0.42*cm
+        x_bullet = self.margin + 0.3*cm
+        x_title = self.margin + 0.5*cm
+        x_text  = self.margin + 0.5*cm
+        max_w   = self.usable_width - 0.7*cm
+
+        for titulo_term, texto_term in terminos:
+            # Bullet
+            c.setFillColor(colors.HexColor('#5E81AC'))
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(x_bullet, y - 0.05*cm, "▸")
+            c.drawString(x_title, y - 0.05*cm, titulo_term)
+            y -= line_h
+
+            # Texto descriptivo (puede ser largo — wrap manual simple)
+            c.setFillColor(colors.HexColor('#4C566A'))
+            c.setFont("Helvetica", 7.5)
+            # Dividir en líneas de ~115 caracteres aprox.
+            words = texto_term.split()
+            line = ""
+            for word in words:
+                test = (line + " " + word).strip()
+                # Estimación: 7.5pt ~ 0.265cm/carácter → max_w/0.265 ~ chars
+                if len(test) * 0.245 > (max_w / cm):
+                    c.drawString(x_text, y - 0.05*cm, line)
+                    y -= line_h
+                    line = word
+                else:
+                    line = test
+            if line:
+                c.drawString(x_text, y - 0.05*cm, line)
+                y -= line_h
+
+            y -= 0.15*cm  # Espacio entre términos
+
+        return y - 0.3*cm
 
     # ==================== CONTRATO DE COMPRA ====================
     def generar_contrato_compra(self, datos_compra):
@@ -548,18 +786,18 @@ class PDFGenerator:
                 y = self.page_height - 2*cm
             
             # Título
-            c.setFillColor(colors.HexColor('#2c3e50'))
+            c.setFillColor(colors.HexColor('#2E3440'))
             c.setFont("Helvetica-Bold", 10)
             c.drawString(self.margin, y, tr("DOCUMENTO DE IDENTIDAD DEL VENDEDOR"))
             
-            c.setStrokeColor(colors.HexColor('#9b59b6'))
+            c.setStrokeColor(colors.HexColor('#B48EAD'))
             c.setLineWidth(2)
             c.line(self.margin, y - 0.2*cm, self.margin + 6.5*cm, y - 0.2*cm)
             
             y -= 0.8*cm
             
             # Dibujar marco
-            c.setStrokeColor(colors.HexColor('#bdc3c7'))
+            c.setStrokeColor(colors.HexColor('#4C566A'))
             c.setLineWidth(1)
             c.rect(self.margin, y - display_height - 0.2*cm, display_width + 0.4*cm, display_height + 0.4*cm, fill=False)
             
@@ -571,10 +809,10 @@ class PDFGenerator:
             
             return y
             
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (OSError, ValueError) as e:
             logger.error(f"Error dibujando imagen DNI: {e}")
             # Si hay error, solo mostrar texto indicativo
-            c.setFillColor(colors.HexColor('#e74c3c'))
+            c.setFillColor(colors.HexColor('#BF616A'))
             c.setFont("Helvetica", 9)
             c.drawString(self.margin, y, f"[{tr('Error al cargar imagen del DNI')}: {str(e)}]")
             return y - 1*cm
@@ -582,11 +820,11 @@ class PDFGenerator:
     def _dibujar_cabecera_contrato(self, c, numero, y):
         """Cabecera del contrato"""
         # Marco de cabecera (sin fondo para impresión B/N)
-        c.setStrokeColor(colors.HexColor('#2c3e50'))
+        c.setStrokeColor(colors.HexColor('#2E3440'))
         c.setLineWidth(2)
         c.rect(0.5*cm, y - 2.5*cm, self.page_width - 1*cm, 2.5*cm, fill=False, stroke=True)
         
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 18)
         c.drawCentredString(self.page_width / 2, y - 1.2*cm, tr("CONTRATO DE COMPRAVENTA"))
         
@@ -606,11 +844,11 @@ class PDFGenerator:
         cliente_tel = datos.get('cliente', {}).get('telefono') or datos.get('proveedor_telefono', '')
         
         # COMPRADOR (Establecimiento) - Izquierda
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("PARTE COMPRADORA (Establecimiento)"))
         
-        c.setStrokeColor(colors.HexColor('#3498db'))
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 5.5*cm, y - 0.2*cm)
         
@@ -621,11 +859,15 @@ class PDFGenerator:
         c.setFont("Helvetica", 9)
         c.drawString(self.margin, y_temp - 0.5*cm, f"NIF: {self.company_info['nif']}")
         c.drawString(self.margin, y_temp - 1*cm, self.company_info['address'])
-        c.drawString(self.margin, y_temp - 1.5*cm, f"Tel: {self.company_info['phone']}")
-        
+        if self.company_info.get('city'):
+            c.drawString(self.margin, y_temp - 1.5*cm, self.company_info['city'])
+            c.drawString(self.margin, y_temp - 2*cm, f"Tel: {self.company_info['phone']}")
+        else:
+            c.drawString(self.margin, y_temp - 1.5*cm, f"Tel: {self.company_info['phone']}")
+
         # VENDEDOR (Cliente) - Derecha
         x_right = self.page_width / 2 + 0.5*cm
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(x_right, y, tr("PARTE VENDEDORA (Cliente)"))
         
@@ -651,18 +893,23 @@ class PDFGenerator:
         if cliente_ciudad:
             c.drawString(x_right, dir_y_pos, f"{cliente_ciudad}")
             dir_y_pos -= 0.5*cm
-            
+
+        cliente_provincia = datos.get('cliente', {}).get('provincia') or datos.get('proveedor_provincia', '')
+        if cliente_provincia:
+            c.drawString(x_right, dir_y_pos, f"{cliente_provincia}")
+            dir_y_pos -= 0.5*cm
+
         c.drawString(x_right, dir_y_pos, f"Tel: {cliente_tel or 'N/A'}")
         
         return y - 3*cm
 
     def _dibujar_dispositivos_contrato(self, c, datos, y):
         """Lista de dispositivos comprados"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("OBJETO DEL CONTRATO - DISPOSITIVOS"))
         
-        c.setStrokeColor(colors.HexColor('#e74c3c'))
+        c.setStrokeColor(colors.HexColor('#BF616A'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 6*cm, y - 0.2*cm)
         
@@ -678,7 +925,7 @@ class PDFGenerator:
             total += subtotal
             
             c.setFont("Helvetica-Bold", 9)
-            c.setFillColor(colors.HexColor('#2c3e50'))
+            c.setFillColor(colors.HexColor('#2E3440'))
             c.drawString(self.margin, y, f"{i}. {item['descripcion']}")
             
             c.setFont("Helvetica", 9)
@@ -701,18 +948,18 @@ class PDFGenerator:
         
         # Total
         c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.HexColor('#e74c3c'))
+        c.setFillColor(colors.HexColor('#BF616A'))
         c.drawRightString(self.page_width - self.margin, y, f"{tr('IMPORTE TOTAL')}: {total:.2f} €")
         
         return y - 1*cm
 
     def _dibujar_clausulas_contrato(self, c, y):
         """Cláusulas legales del contrato"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("CLÁUSULAS Y CONDICIONES"))
         
-        c.setStrokeColor(colors.HexColor('#27ae60'))
+        c.setStrokeColor(colors.HexColor('#A3BE8C'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 4.5*cm, y - 0.2*cm)
         
@@ -731,7 +978,7 @@ class PDFGenerator:
         ]
         
         c.setFont("Helvetica", 7.5)
-        c.setFillColor(colors.HexColor('#34495e'))
+        c.setFillColor(colors.HexColor('#434C5E'))
         
         for clausula in clausulas:
             # Dividir texto largo en líneas
@@ -819,7 +1066,7 @@ class PDFGenerator:
         # Altura aumentada para que el texto "Escanear QR" se vea completo
         header_height = 2.9*cm
         # Marco de cabecera (sin fondo para impresión B/N)
-        c.setStrokeColor(colors.HexColor('#8e44ad'))
+        c.setStrokeColor(colors.HexColor('#B48EAD'))
         c.setLineWidth(2)
         c.rect(0.5*cm, y - header_height, self.page_width - 1*cm, header_height, fill=False, stroke=True)
 
@@ -841,16 +1088,16 @@ class PDFGenerator:
             c.drawImage(ImageReader(qr_buffer), qr_x, qr_y, width=qr_size, height=qr_size)
 
             # Etiqueta "Escanear" - ahora dentro del marco
-            c.setFillColor(colors.HexColor('#8e44ad'))
+            c.setFillColor(colors.HexColor('#B48EAD'))
             c.setFont("Helvetica", 7)
             c.drawCentredString(qr_x + qr_size/2, qr_y - 0.35*cm, tr("Escanear QR"))
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except Exception as e:
             logger.error(f"Error al generar QR: {e}")
             # Continuar sin QR si falla
 
         # === TÍTULO Y DATOS ===
-        c.setFillColor(colors.HexColor('#8e44ad'))
+        c.setFillColor(colors.HexColor('#B48EAD'))
         c.setFont("Helvetica-Bold", 18)
         c.drawCentredString(self.page_width / 2, y - 1.2*cm, tr("ORDEN DE REPARACIÓN"))
  
@@ -865,11 +1112,11 @@ class PDFGenerator:
     def _dibujar_partes_orden(self, c, datos, y):
         """Datos de tienda y cliente lado a lado"""
         # ESTABLECIMIENTO (Izquierda)
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("SERVICIO TÉCNICO"))
         
-        c.setStrokeColor(colors.HexColor('#8e44ad'))
+        c.setStrokeColor(colors.HexColor('#B48EAD'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 3.5*cm, y - 0.2*cm)
         
@@ -880,11 +1127,15 @@ class PDFGenerator:
         c.setFont("Helvetica", 9)
         c.drawString(self.margin, y_temp - 0.45*cm, f"NIF: {self.company_info['nif']}")
         c.drawString(self.margin, y_temp - 0.9*cm, self.company_info['address'])
-        c.drawString(self.margin, y_temp - 1.35*cm, f"Tel: {self.company_info['phone']}")
+        if self.company_info.get('city'):
+            c.drawString(self.margin, y_temp - 1.35*cm, self.company_info['city'])
+            c.drawString(self.margin, y_temp - 1.8*cm, f"Tel: {self.company_info['phone']}")
+        else:
+            c.drawString(self.margin, y_temp - 1.35*cm, f"Tel: {self.company_info['phone']}")
         
         # CLIENTE (Derecha)
         x_right = self.page_width / 2 + 0.5*cm
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(x_right, y, tr("CLIENTE"))
         
@@ -911,16 +1162,21 @@ class PDFGenerator:
                 
             if cliente_ciudad:
                 c.drawString(x_right, y_addr, f"{cliente_ciudad}")
-        
+                y_addr -= 0.45*cm
+
+            cliente_provincia = datos.get('cliente_provincia', '')
+            if cliente_provincia:
+                c.drawString(x_right, y_addr, f"{cliente_provincia}")
+
         return y - 2.8*cm
 
     def _dibujar_dispositivos_orden(self, c, datos, y):
         """Lista de dispositivos a reparar con averías detalladas"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("DISPOSITIVOS A REPARAR"))
 
-        c.setStrokeColor(colors.HexColor('#e67e22'))
+        c.setStrokeColor(colors.HexColor('#D08770'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 4.5*cm, y - 0.2*cm)
 
@@ -934,7 +1190,7 @@ class PDFGenerator:
 
             # Dispositivo principal
             c.setFont("Helvetica-Bold", 10)
-            c.setFillColor(colors.HexColor('#2c3e50'))
+            c.setFillColor(colors.HexColor('#2E3440'))
             c.drawString(self.margin, y, f"{tr('DISPOSITIVO')} {i}: {disp}")
             y -= 0.5*cm
 
@@ -957,25 +1213,25 @@ class PDFGenerator:
 
                 for j, averia in enumerate(averias, 1):
                     c.setFont("Helvetica-Bold", 9)
-                    c.setFillColor(colors.HexColor('#e67e22'))
+                    c.setFillColor(colors.HexColor('#D08770'))
                     c.drawString(self.margin + 1*cm, y, f"• {tr('Avería')} {j}: {averia.get('descripcion_averia', '')}")
                     y -= 0.4*cm
 
                     c.setFont("Helvetica", 9)
-                    c.setFillColor(colors.HexColor('#555555'))
+                    c.setFillColor(colors.HexColor('#4C566A'))
                     c.drawString(self.margin + 1.5*cm, y, f"{tr('Solución')}: {averia.get('solucion', '')}")
 
                     precio_averia = float(averia.get('precio', 0))
                     subtotal_dispositivo += precio_averia
-                    c.setFillColor(colors.HexColor('#27ae60'))
+                    c.setFillColor(colors.HexColor('#A3BE8C'))
                     c.drawRightString(self.page_width - self.margin, y, f"{precio_averia:.2f} €")
                     y -= 0.5*cm
 
                 # Subtotal del dispositivo
                 c.setFont("Helvetica-Bold", 9)
-                c.setFillColor(colors.HexColor('#2c3e50'))
+                c.setFillColor(colors.HexColor('#2E3440'))
                 c.drawString(self.margin + 1*cm, y, tr("Subtotal dispositivo") + ":")
-                c.setFillColor(colors.HexColor('#27ae60'))
+                c.setFillColor(colors.HexColor('#A3BE8C'))
                 c.drawRightString(self.page_width - self.margin, y, f"{subtotal_dispositivo:.2f} €")
                 total_estimado += subtotal_dispositivo
                 y -= 0.6*cm
@@ -994,26 +1250,26 @@ class PDFGenerator:
                     c.drawString(self.margin + 0.5*cm, y, f"{tr('Solución')}: {solucion_texto}")
                     y -= 0.4*cm
 
-                c.setFillColor(colors.HexColor('#27ae60'))
+                c.setFillColor(colors.HexColor('#A3BE8C'))
                 c.drawRightString(self.page_width - self.margin, y, f"{precio:.2f} €")
                 y -= 0.5*cm
 
             if item.get('notas'):
                 c.setFont("Helvetica-Oblique", 8)
-                c.setFillColor(colors.HexColor('#7f8c8d'))
+                c.setFillColor(colors.HexColor('#4C566A'))
                 c.drawString(self.margin + 0.5*cm, y, f"{tr('Nota')}: {item['notas']}")
                 y -= 0.4*cm
 
             y -= 0.3*cm
 
         # Total estimado general
-        c.setStrokeColor(colors.HexColor('#8e44ad'))
+        c.setStrokeColor(colors.HexColor('#B48EAD'))
         c.setLineWidth(1)
         c.line(self.margin, y, self.page_width - self.margin, y)
         y -= 0.5*cm
 
         c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.HexColor('#8e44ad'))
+        c.setFillColor(colors.HexColor('#B48EAD'))
         c.drawString(self.margin, y, tr("TOTAL REPARACIÓN") + ":")
         c.drawRightString(self.page_width - self.margin, y, f"{total_estimado:.2f} €")
 
@@ -1021,11 +1277,11 @@ class PDFGenerator:
 
     def _dibujar_condiciones_sat(self, c, y):
         """Condiciones del servicio técnico"""
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y, tr("CONDICIONES DEL SERVICIO TÉCNICO"))
 
-        c.setStrokeColor(colors.HexColor('#3498db'))
+        c.setStrokeColor(colors.HexColor('#5E81AC'))
         c.setLineWidth(2)
         c.line(self.margin, y - 0.2*cm, self.margin + 5.5*cm, y - 0.2*cm)
 
@@ -1042,7 +1298,7 @@ class PDFGenerator:
         ]
 
         c.setFont("Helvetica", 8)
-        c.setFillColor(colors.HexColor('#555555'))
+        c.setFillColor(colors.HexColor('#4C566A'))
 
         for cond in condiciones:
             c.drawString(self.margin, y, cond)
@@ -1051,7 +1307,7 @@ class PDFGenerator:
         # ADVERTENCIAS ADICIONALES
         y -= 0.3*cm
         c.setFont("Helvetica-Bold", 9)
-        c.setFillColor(colors.HexColor('#e74c3c'))
+        c.setFillColor(colors.HexColor('#BF616A'))
         c.drawString(self.margin, y, tr("ADVERTENCIAS IMPORTANTES") + ":")
         y -= 0.5*cm
 
@@ -1065,7 +1321,7 @@ class PDFGenerator:
         ]
 
         c.setFont("Helvetica", 7.5)
-        c.setFillColor(colors.HexColor('#555555'))
+        c.setFillColor(colors.HexColor('#4C566A'))
 
         for adv in advertencias:
             c.drawString(self.margin, y, adv)
@@ -1080,12 +1336,12 @@ class PDFGenerator:
 
         # Título
         c.setFont("Helvetica-Bold", 14)
-        c.setFillColor(colors.HexColor('#2c3e50'))
+        c.setFillColor(colors.HexColor('#2E3440'))
         c.drawCentredString(self.page_width / 2, y, tr("CONDICIONES GENERALES DE LA CONTRATACIÓN"))
         y -= 0.8*cm
 
         c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.HexColor('#8e44ad'))
+        c.setFillColor(colors.HexColor('#B48EAD'))
         c.drawCentredString(self.page_width / 2, y, nombre_establecimiento)
         y -= 1.2*cm
 

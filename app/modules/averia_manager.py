@@ -16,7 +16,7 @@ class AveriaManager:
                 (nombre, descripcion)
             )
             return averia_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error creando avería: {e}")
             return None
 
@@ -41,7 +41,7 @@ class AveriaManager:
                 (nombre, descripcion, averia_id)
             )
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error actualizando avería: {e}")
             return False
 
@@ -72,7 +72,7 @@ class AveriaManager:
                 )
                 return True, "Avería eliminada correctamente"
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error eliminando avería: {e}")
             return False, f"Error: {str(e)}"
 

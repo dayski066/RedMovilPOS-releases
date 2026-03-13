@@ -3,7 +3,7 @@ Ventana de inicio de sesión con sistema de configuración inicial
 y recuperación de contraseña mediante llave maestra
 """
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QMessageBox, QFrame, QStackedWidget,
+                             QPushButton, QFrame, QStackedWidget, QScrollArea,
                              QWidget, QTextEdit, QApplication)
 from app.ui.transparent_buttons import apply_btn_primary, apply_btn_success, apply_btn_cancel, apply_btn_warning
 from PyQt5.QtCore import Qt
@@ -13,6 +13,7 @@ from app.modules.auth_manager import AuthManager
 from app.ui.password_strength_widget import PasswordStrengthWidget
 from config import COMPANY_INFO, APP_VERSION, APP_NAME
 from app.i18n import tr
+from app.utils.notify import notify_success, notify_error, notify_warning
 from datetime import datetime
 from app.utils.logger import logger
 
@@ -29,17 +30,21 @@ class LoginDialog(QDialog):
         self.auth_manager = auth_manager if auth_manager else AuthManager(db)
         self.usuario_logueado = None
         self.llave_generada = None  # Para mostrar al crear usuario
+        self._pendiente_2fa = None  # Datos del usuario pendiente de verificación 2FA
         self.permitir_autologin = permitir_autologin
 
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} - Acceso")
         self.setModal(True)
         self.setWindowFlags(
             Qt.Dialog |
-            Qt.MSWindowsFixedSizeDialogHint |
             Qt.WindowTitleHint |
             Qt.WindowCloseButtonHint
         )
-        self.setFixedSize(550, 820)
+        screen = QApplication.primaryScreen().availableGeometry()
+        max_h = int(screen.height() * 0.92)
+        self.setFixedWidth(520)
+        self.setMaximumHeight(max_h)
+        self.resize(520, min(520, max_h))
         
         self.setup_ui()
         
@@ -103,112 +108,132 @@ class LoginDialog(QDialog):
         # Página 3: Mostrar llave generada
         self.pagina_llave = self.crear_pagina_llave()
         self.stack.addWidget(self.pagina_llave)
-        
-        layout.addWidget(self.stack)
+
+        # Página 4: Verificación TOTP 2FA
+        self.pagina_totp = self.crear_pagina_totp()
+        self.stack.addWidget(self.pagina_totp)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(self.stack)
+        layout.addWidget(scroll)
 
     def crear_pagina_login(self):
         """Crea la página de login normal"""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(15)
-        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setSpacing(0)
+        layout.setContentsMargins(30, 14, 30, 14)
 
-        # Header
-        self.crear_header(layout, tr("Iniciar Sesión"))
+        # ── Logo del establecimiento en lugar del candado ──
+        logo_path = self._obtener_logo_establecimiento()
+        if logo_path and os.path.exists(logo_path):
+            logo_label = QLabel()
+            logo_label.setAlignment(Qt.AlignCenter)
+            pixmap = QPixmap(logo_path)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(160, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                logo_label.setPixmap(scaled)
+                layout.addWidget(logo_label)
+                layout.addSpacing(6)
 
-        layout.addSpacing(20)
+        title = QLabel(tr("Iniciar Sesión"))
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
 
-        # Campo usuario
+        layout.addSpacing(3)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet("background-color: transparent; color: #88C0D0; border: 2px solid #88C0D0; border-radius: 6px;")
+        line.setFixedHeight(1)
+        layout.addWidget(line)
+
+        layout.addSpacing(14)
+
+        # ── Tarjeta con campos ──
+        card_frame = QFrame()
+        card_frame.setObjectName("cardPanel")
+        card_layout = QVBoxLayout(card_frame)
+        card_layout.setSpacing(0)
+        card_layout.setContentsMargins(25, 20, 25, 20)
+
         user_label = QLabel(tr("Usuario") + ":")
-        user_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(user_label)
+        user_label.setStyleSheet("font-weight: bold; color: #D8DEE9; font-size: 13px;")
+        card_layout.addWidget(user_label)
+        card_layout.addSpacing(5)
 
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText(tr("Usuario"))
+        self.username_input.setMinimumHeight(40)
+        self.username_input.setStyleSheet("padding: 5px 10px; font-size: 13px;")
         self.username_input.returnPressed.connect(lambda: self.password_input.setFocus())
-        layout.addWidget(self.username_input)
+        card_layout.addWidget(self.username_input)
+        card_layout.addSpacing(14)
 
-        layout.addSpacing(5)
-
-        # Campo contraseña
         password_label = QLabel(tr("Contraseña") + ":")
-        password_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(password_label)
+        password_label.setStyleSheet("font-weight: bold; color: #D8DEE9; font-size: 13px;")
+        card_layout.addWidget(password_label)
+        card_layout.addSpacing(5)
 
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setPlaceholderText(tr("Contraseña"))
+        self.password_input.setMinimumHeight(40)
+        self.password_input.setStyleSheet("padding: 5px 10px; font-size: 13px;")
         self.password_input.returnPressed.connect(self.intentar_login)
-        layout.addWidget(self.password_input)
+        card_layout.addWidget(self.password_input)
+        card_layout.addSpacing(18)
 
-        layout.addSpacing(20)
-
-        # Botón login
         btn_login = QPushButton(tr("Iniciar Sesión"))
-        # Aplicar estilo inline con fondo transparente
-        btn_login.setStyleSheet("""
-            QPushButton {
-                background-color: transparent !important;
-                color: #88C0D0;
-                border: 2px solid #88C0D0;
-                border-radius: 6px;
-                padding: 0 16px;
-                font-size: 14px;
-                font-weight: 600;
-                min-height: 42px;
-            }
-            QPushButton:hover {
-                background-color: rgba(136, 192, 208, 0.1) !important;
-                border: 2px solid #88C0D0;
-            }
-            QPushButton:pressed {
-                background-color: rgba(136, 192, 208, 0.2) !important;
-            }
-        """)
+        btn_login.setMinimumHeight(44)
+        btn_login.setCursor(Qt.PointingHandCursor)
+        apply_btn_primary(btn_login)
         btn_login.clicked.connect(self.intentar_login)
-        layout.addWidget(btn_login)
+        card_layout.addWidget(btn_login)
 
-        # Opciones de recordar
-        options_layout = QHBoxLayout()
-
-        from PyQt5.QtWidgets import QCheckBox
-        self.check_recordar = QCheckBox(tr("Recordar credenciales"))
-        self.check_recordar.setStyleSheet("color: #7f8c8d; font-size: 11px;")
-        self.check_recordar.setToolTip(tr("Recordar credenciales"))
-        options_layout.addWidget(self.check_recordar)
-
-        options_layout.addStretch()
-
-        self.check_autologin = QCheckBox(tr("Auto-login"))
-        self.check_autologin.setStyleSheet("color: #7f8c8d; font-size: 11px;")
-        self.check_autologin.setToolTip(tr("Auto-login"))
-        options_layout.addWidget(self.check_autologin)
-        
-        layout.addLayout(options_layout)
-        
+        layout.addWidget(card_frame)
         layout.addSpacing(10)
 
-        # Link recuperar contraseña
+        # ── Opciones ──
+        from PyQt5.QtWidgets import QCheckBox
+        options_layout = QHBoxLayout()
+        self.check_recordar = QCheckBox(tr("Recordar credenciales"))
+        self.check_recordar.setStyleSheet("color: #7B88A0; font-size: 11px;")
+        self.check_recordar.setToolTip(tr("Recordar credenciales"))
+        options_layout.addWidget(self.check_recordar)
+        options_layout.addStretch()
+        self.check_autologin = QCheckBox(tr("Auto-login"))
+        self.check_autologin.setStyleSheet("color: #7B88A0; font-size: 11px;")
+        self.check_autologin.setToolTip(tr("Auto-login"))
+        options_layout.addWidget(self.check_autologin)
+        layout.addLayout(options_layout)
+        layout.addSpacing(6)
+
+        # ── Link recuperar contraseña ──
         btn_recovery = QPushButton(tr("¿Olvidaste tu contraseña?"))
         btn_recovery.setStyleSheet("""
             QPushButton {
-                background: none;
-                border: none;
-                color: #3498db;
-                font-size: 12px;
+                background: none; border: none;
+                color: #5E81AC; font-size: 12px;
                 text-decoration: underline;
             }
-            QPushButton:hover { color: #2980b9; }
+            QPushButton:hover { color: #81A1C1; }
         """)
         btn_recovery.setCursor(Qt.PointingHandCursor)
         btn_recovery.clicked.connect(self.mostrar_recovery)
         layout.addWidget(btn_recovery, alignment=Qt.AlignCenter)
+        layout.addSpacing(12)
 
-        layout.addStretch()
+        # ── Copyright ──
+        footer = QLabel(f"© {datetime.now().year} - {APP_NAME} v{APP_VERSION}")
+        footer.setStyleSheet("color: #4C566A; font-size: 10px;")
+        footer.setAlignment(Qt.AlignCenter)
+        layout.addWidget(footer)
 
-        # Footer
-        self.crear_footer(layout)
-        
         return page
 
     def crear_pagina_setup(self):
@@ -219,30 +244,30 @@ class LoginDialog(QDialog):
         layout.setContentsMargins(40, 20, 40, 20)
 
         # Header
-        self.crear_header(layout, "Configuración Inicial", 
-                         "Bienvenido. Crea el primer usuario administrador.")
+        self.crear_header(layout, tr("Configuración Inicial"), 
+                         tr("Bienvenido. Crea el primer usuario administrador."))
 
         layout.addSpacing(10)
 
         # Nombre completo
-        layout.addWidget(QLabel("Nombre completo:"))
+        layout.addWidget(QLabel(tr("Nombre completo:")))
         self.setup_nombre = QLineEdit()
-        self.setup_nombre.setPlaceholderText("Ej: Juan García")
+        self.setup_nombre.setPlaceholderText(tr("Ej: Juan García"))
         self.setup_nombre.setMinimumHeight(40)
         layout.addWidget(self.setup_nombre)
 
         # Usuario
-        layout.addWidget(QLabel("Nombre de usuario:"))
+        layout.addWidget(QLabel(tr("Nombre de usuario:")))
         self.setup_username = QLineEdit()
-        self.setup_username.setPlaceholderText("Ej: admin")
+        self.setup_username.setPlaceholderText(tr("Ej: admin"))
         self.setup_username.setMinimumHeight(40)
         layout.addWidget(self.setup_username)
 
         # Contraseña
-        layout.addWidget(QLabel("Contraseña (mínimo 8 caracteres, mayúscula y número):"))
+        layout.addWidget(QLabel(tr("Contraseña (mínimo 8 caracteres, mayúscula y número):")))
         self.setup_password = QLineEdit()
         self.setup_password.setEchoMode(QLineEdit.Password)
-        self.setup_password.setPlaceholderText("Tu contraseña segura")
+        self.setup_password.setPlaceholderText(tr("Tu contraseña segura"))
         self.setup_password.setMinimumHeight(40)
         self.setup_password.textChanged.connect(self._actualizar_fortaleza_setup)
         layout.addWidget(self.setup_password)
@@ -252,22 +277,22 @@ class LoginDialog(QDialog):
         layout.addWidget(self.setup_strength)
 
         # Confirmar contraseña
-        layout.addWidget(QLabel("Confirmar contraseña:"))
+        layout.addWidget(QLabel(tr("Confirmar contraseña:")))
         self.setup_password2 = QLineEdit()
         self.setup_password2.setEchoMode(QLineEdit.Password)
-        self.setup_password2.setPlaceholderText("Repite la contraseña")
+        self.setup_password2.setPlaceholderText(tr("Repite la contraseña"))
         self.setup_password2.setMinimumHeight(40)
         layout.addWidget(self.setup_password2)
 
         layout.addSpacing(15)
 
         # Info importante
-        info = QLabel("⚠️ Al crear el usuario se generará una LLAVE DE RECUPERACIÓN.\n"
-                     "Guárdala en un lugar seguro, la necesitarás si olvidas tu contraseña.")
+        info = QLabel(tr("⚠️ Al crear el usuario se generará una LLAVE DE RECUPERACIÓN.") + "\n" +
+                     tr("Guárdala en un lugar seguro, la necesitarás si olvidas tu contraseña."))
         info.setStyleSheet("""
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffc107;
+            background-color: rgba(235, 203, 139, 0.15);
+            color: #EBCB8B;
+            border: 1px solid #EBCB8B;
             border-radius: 5px;
             padding: 12px;
             font-size: 11px;
@@ -278,7 +303,7 @@ class LoginDialog(QDialog):
         layout.addSpacing(15)
 
         # Botón crear
-        btn_crear = QPushButton("Crear Usuario Administrador")
+        btn_crear = QPushButton(tr("Crear Usuario Administrador"))
         apply_btn_success(btn_crear)
         btn_crear.clicked.connect(self.crear_usuario_inicial)
         layout.addWidget(btn_crear)
@@ -296,30 +321,30 @@ class LoginDialog(QDialog):
         layout.setContentsMargins(40, 30, 40, 30)
 
         # Header
-        self.crear_header(layout, "Recuperar Contraseña",
-                         "Introduce tu usuario y la llave maestra que guardaste.")
+        self.crear_header(layout, tr("Recuperar Contraseña"),
+                         tr("Introduce tu usuario y la llave maestra que guardaste."))
 
         layout.addSpacing(15)
 
         # Usuario
-        layout.addWidget(QLabel("Nombre de usuario:"))
+        layout.addWidget(QLabel(tr("Nombre de usuario:")))
         self.recovery_username = QLineEdit()
-        self.recovery_username.setPlaceholderText("Tu usuario")
+        self.recovery_username.setPlaceholderText(tr("Tu usuario"))
         self.recovery_username.setMinimumHeight(40)
         layout.addWidget(self.recovery_username)
 
         # Llave maestra
-        layout.addWidget(QLabel("Llave de recuperación:"))
+        layout.addWidget(QLabel(tr("Llave de recuperación:")))
         self.recovery_key = QLineEdit()
         self.recovery_key.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
         self.recovery_key.setMinimumHeight(40)
         layout.addWidget(self.recovery_key)
 
         # Nueva contraseña
-        layout.addWidget(QLabel("Nueva contraseña (mínimo 8 caracteres, mayúscula y número):"))
+        layout.addWidget(QLabel(tr("Nueva contraseña (mínimo 8 caracteres, mayúscula y número):")))
         self.recovery_password = QLineEdit()
         self.recovery_password.setEchoMode(QLineEdit.Password)
-        self.recovery_password.setPlaceholderText("Tu nueva contraseña segura")
+        self.recovery_password.setPlaceholderText(tr("Tu nueva contraseña segura"))
         self.recovery_password.setMinimumHeight(40)
         self.recovery_password.textChanged.connect(self._actualizar_fortaleza_recovery)
         layout.addWidget(self.recovery_password)
@@ -329,7 +354,7 @@ class LoginDialog(QDialog):
         layout.addWidget(self.recovery_strength)
 
         # Confirmar
-        layout.addWidget(QLabel("Confirmar nueva contraseña:"))
+        layout.addWidget(QLabel(tr("Confirmar nueva contraseña:")))
         self.recovery_password2 = QLineEdit()
         self.recovery_password2.setEchoMode(QLineEdit.Password)
         self.recovery_password2.setMinimumHeight(40)
@@ -340,12 +365,12 @@ class LoginDialog(QDialog):
         # Botones
         btn_layout = QHBoxLayout()
         
-        btn_volver = QPushButton("← Volver")
+        btn_volver = QPushButton(tr("← Volver"))
         apply_btn_cancel(btn_volver)
         btn_volver.clicked.connect(self.mostrar_login)
         btn_layout.addWidget(btn_volver)
 
-        btn_recuperar = QPushButton("Cambiar Contraseña")
+        btn_recuperar = QPushButton(tr("Cambiar Contraseña"))
         apply_btn_warning(btn_recuperar)
         btn_recuperar.clicked.connect(self.recuperar_password)
         btn_layout.addWidget(btn_recuperar)
@@ -365,8 +390,8 @@ class LoginDialog(QDialog):
         layout.setContentsMargins(40, 30, 40, 30)
 
         # Header
-        self.crear_header(layout, "¡Usuario Creado!", 
-                         "Guarda tu llave de recuperación en un lugar seguro.")
+        self.crear_header(layout, tr("¡Usuario Creado!"), 
+                         tr("Guarda tu llave de recuperación en un lugar seguro."))
 
         layout.addSpacing(20)
 
@@ -379,12 +404,12 @@ class LoginDialog(QDialog):
         layout.addSpacing(10)
 
         # Caja con la llave
-        layout.addWidget(QLabel("Tu LLAVE DE RECUPERACIÓN es:"))
+        layout.addWidget(QLabel(tr("Tu LLAVE DE RECUPERACIÓN es:")))
         
         self.lbl_llave = QLabel("")
         self.lbl_llave.setStyleSheet("""
-            background-color: #2c3e50;
-            color: #2ecc71;
+            background-color: #2E3440;
+            color: #A3BE8C;
             font-size: 22px;
             font-weight: bold;
             font-family: 'Consolas', 'Courier New', monospace;
@@ -400,16 +425,16 @@ class LoginDialog(QDialog):
 
         # Advertencia
         warning = QLabel(
-            "⚠️ IMPORTANTE:\n\n"
-            "• Esta llave es ÚNICA y no se puede recuperar.\n"
-            "• Si la pierdes, no podrás recuperar tu contraseña.\n"
-            "• Guárdala en un lugar seguro (papel, gestor de contraseñas, etc.)\n"
-            "• NO la compartas con nadie."
+            tr("⚠️ IMPORTANTE:") + "\n\n" +
+            tr("• Esta llave es ÚNICA y no se puede recuperar.") + "\n" +
+            tr("• Si la pierdes, no podrás recuperar tu contraseña.") + "\n" +
+            tr("• Guárdala en un lugar seguro (papel, gestor de contraseñas, etc.)") + "\n" +
+            tr("• NO la compartas con nadie.")
         )
         warning.setStyleSheet("""
-            background-color: #ffeaa7;
-            color: #2d3436;
-            border: 2px solid #fdcb6e;
+            background-color: rgba(235, 203, 139, 0.15);
+            color: #EBCB8B;
+            border: 2px solid #EBCB8B;
             border-radius: 8px;
             padding: 15px;
             font-size: 11px;
@@ -420,7 +445,7 @@ class LoginDialog(QDialog):
         layout.addSpacing(20)
 
         # Checkbox confirmación
-        self.check_guardado = QPushButton("✓ He guardado la llave, continuar al login")
+        self.check_guardado = QPushButton(tr("✓ He guardado la llave, continuar al login"))
         apply_btn_success(self.check_guardado)
         self.check_guardado.clicked.connect(self.mostrar_login)
         layout.addWidget(self.check_guardado)
@@ -428,6 +453,136 @@ class LoginDialog(QDialog):
         layout.addStretch()
         
         return page
+
+    def crear_pagina_totp(self):
+        """Crea la página de verificación TOTP 2FA"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(15)
+        layout.setContentsMargins(40, 30, 40, 30)
+
+        self.crear_header(layout, tr("Verificación en Dos Pasos"),
+                         tr("Introduce el código de 6 dígitos de tu app de autenticación"))
+
+        layout.addSpacing(30)
+
+        # Icono escudo
+        shield_icon = QLabel("🛡️")
+        shield_icon.setStyleSheet("font-size: 50px;")
+        shield_icon.setAlignment(Qt.AlignCenter)
+        layout.addWidget(shield_icon)
+
+        layout.addSpacing(20)
+
+        # Campo de código TOTP
+        self.totp_input = QLineEdit()
+        self.totp_input.setPlaceholderText("000000")
+        self.totp_input.setMaxLength(6)
+        self.totp_input.setAlignment(Qt.AlignCenter)
+        self.totp_input.setStyleSheet("""
+            QLineEdit {
+                font-size: 32px;
+                font-weight: bold;
+                font-family: 'Consolas', 'Courier New', monospace;
+                letter-spacing: 10px;
+                padding: 15px;
+                border: 2px solid #5E81AC;
+                border-radius: 8px;
+                background-color: #2E3440;
+                color: #ECEFF4;
+                max-width: 250px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #88C0D0;
+            }
+        """)
+        self.totp_input.returnPressed.connect(self._verificar_totp)
+
+        # Centrar el input
+        input_layout = QHBoxLayout()
+        input_layout.addStretch()
+        input_layout.addWidget(self.totp_input)
+        input_layout.addStretch()
+        layout.addLayout(input_layout)
+
+        layout.addSpacing(10)
+
+        # Info
+        info = QLabel(tr("El código cambia cada 30 segundos"))
+        info.setStyleSheet("color: #7B88A0; font-size: 11px;")
+        info.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info)
+
+        layout.addSpacing(20)
+
+        # Botones
+        btns_layout = QHBoxLayout()
+        btns_layout.addStretch()
+
+        btn_cancelar = QPushButton(tr("Cancelar"))
+        btn_cancelar.clicked.connect(self._cancelar_totp)
+        apply_btn_cancel(btn_cancelar)
+        btns_layout.addWidget(btn_cancelar)
+
+        btn_verificar = QPushButton(tr("Verificar"))
+        btn_verificar.clicked.connect(self._verificar_totp)
+        apply_btn_primary(btn_verificar)
+        btns_layout.addWidget(btn_verificar)
+
+        btns_layout.addStretch()
+        layout.addLayout(btns_layout)
+
+        layout.addStretch()
+        return page
+
+    def _verificar_totp(self):
+        """Verifica el código TOTP introducido"""
+        codigo = self.totp_input.text().strip()
+
+        if not codigo or len(codigo) != 6 or not codigo.isdigit():
+            notify_warning(self, tr("Error"), tr("Introduce un código de 6 dígitos"))
+            return
+
+        usuario_id = self._pendiente_2fa.get('id') if self._pendiente_2fa else None
+        if not usuario_id:
+            notify_error(self, tr("Error"), tr("Error de sesión. Inténtalo de nuevo."))
+            self._cancelar_totp()
+            return
+
+        if self.auth_manager.verificar_totp(usuario_id, codigo):
+            # Re-login (la sesión fue cerrada temporalmente)
+            usuario = self.db.fetch_one(
+                "SELECT * FROM usuarios WHERE id = ? AND activo = 1",
+                (usuario_id,)
+            )
+            if usuario:
+                self.auth_manager.usuario_actual = {
+                    'id': usuario['id'],
+                    'username': usuario['username'],
+                    'nombre_completo': usuario['nombre_completo'],
+                    'rol': usuario['rol'],
+                    'establecimiento_id': usuario.get('establecimiento_id')
+                }
+                from datetime import datetime
+                self.auth_manager.ultima_actividad = datetime.now()
+
+            self.usuario_logueado = self.auth_manager.obtener_usuario_actual()
+            self._pendiente_2fa = None
+            notify_success(self, tr("Bienvenido"), tr("Verificación 2FA correcta"))
+            self.accept()
+        else:
+            notify_error(self, tr("Error"), tr("Código incorrecto. Inténtalo de nuevo."))
+            self.totp_input.clear()
+            self.totp_input.setFocus()
+
+    def _cancelar_totp(self):
+        """Cancela la verificación TOTP y vuelve al login"""
+        self._pendiente_2fa = None
+        self.auth_manager.logout()
+        self.totp_input.clear()
+        self.stack.setCurrentIndex(0)
+        self.password_input.clear()
+        self.password_input.setFocus()
 
     def crear_header(self, layout, titulo, subtitulo=None):
         """Crea el header común para todas las páginas"""
@@ -445,13 +600,13 @@ class LoginDialog(QDialog):
 
         # Empresa
         company = QLabel(COMPANY_INFO['name'])
-        company.setStyleSheet("font-size: 11px; color: #969696;")
+        company.setStyleSheet("font-size: 11px; color: #7B88A0;")
         company.setAlignment(Qt.AlignCenter)
         layout.addWidget(company)
 
         if subtitulo:
             sub = QLabel(subtitulo)
-            sub.setStyleSheet("font-size: 11px; color: #95a5a6;")
+            sub.setStyleSheet("font-size: 11px; color: #D8DEE9;")
             sub.setAlignment(Qt.AlignCenter)
             sub.setWordWrap(True)
             layout.addWidget(sub)
@@ -481,7 +636,7 @@ class LoginDialog(QDialog):
 
         # Copyright
         footer = QLabel(f"© {datetime.now().year} - {APP_NAME} v{APP_VERSION}")
-        footer.setStyleSheet("color: #95a5a6; font-size: 10px;")
+        footer.setStyleSheet("color: #D8DEE9; font-size: 10px;")
         footer.setAlignment(Qt.AlignCenter)
         layout.addWidget(footer)
 
@@ -499,21 +654,8 @@ class LoginDialog(QDialog):
         return None
 
     def apply_styles(self):
-        """Aplica estilos globales - DARK MODE"""
-        self.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #cccccc; font-size: 12px; }
-            QLineEdit {
-                padding: 10px 15px;
-                border: 2px solid #3e3e42;
-                border-radius: 8px;
-                background-color: #3c3c3c;
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QLineEdit:focus { border: 2px solid #007acc; }
-            QCheckBox { color: #cccccc; }
-        """)
+        """Aplica estilos globales - Nord theme (inherited from app stylesheet)"""
+        pass
 
     # === Navegación ===
     def mostrar_login(self):
@@ -545,7 +687,7 @@ class LoginDialog(QDialog):
         password = self.password_input.text()
 
         if not username or not password:
-            QMessageBox.warning(self, tr("Error"), tr("Usuario") + " / " + tr("Contraseña"))
+            notify_warning(self, tr("Error"), tr("Usuario") + " / " + tr("Contraseña"))
             return
 
         exito, mensaje = self.auth_manager.login(username, password)
@@ -553,22 +695,32 @@ class LoginDialog(QDialog):
         if exito:
             self.usuario_logueado = self.auth_manager.obtener_usuario_actual()
 
+            # Verificar si el usuario tiene 2FA activado
+            if self.auth_manager.tiene_totp(self.usuario_logueado['id']):
+                # Guardar datos pendientes y cerrar sesión temporal
+                self._pendiente_2fa = dict(self.usuario_logueado)
+                self.auth_manager.logout()
+                self.usuario_logueado = None
+                # Mostrar página de verificación TOTP
+                self.totp_input.clear()
+                self.stack.setCurrentIndex(4)
+                self.totp_input.setFocus()
+                return
+
             # Verificar si el usuario tiene establecimiento asignado
             if not self.usuario_logueado.get('establecimiento_id'):
                 if not self._asignar_establecimiento_usuario(self.usuario_logueado['id']):
-                    # Si no se pudo asignar, hacer logout y no continuar
                     self.auth_manager.logout()
                     self.usuario_logueado = None
                     return
-                # Recargar usuario con el establecimiento asignado
                 self.usuario_logueado = self.auth_manager.obtener_usuario_actual()
 
             # Guardar preferencias de login
             self.guardar_preferencias_login(username)
-            QMessageBox.information(self, tr("Bienvenido"), mensaje)
+            notify_success(self, tr("Bienvenido"), mensaje)
             self.accept()
         else:
-            QMessageBox.critical(self, tr("Error"), mensaje)
+            notify_error(self, tr("Error"), mensaje)
             self.password_input.clear()
             self.password_input.setFocus()
 
@@ -585,19 +737,19 @@ class LoginDialog(QDialog):
             # Hay establecimientos, preguntar si quiere usar uno existente o crear nuevo
             from PyQt5.QtWidgets import QInputDialog
             nombres = [f"{e['id']} - {e['nombre']}" for e in establecimientos]
-            nombres.append("➕ Crear nuevo establecimiento")
+            nombres.append(tr("➕ Crear nuevo establecimiento"))
 
             seleccion, ok = QInputDialog.getItem(
                 self,
-                "Seleccionar Establecimiento",
-                "Tu usuario no tiene establecimiento asignado.\nSelecciona uno:",
+                tr("Seleccionar Establecimiento"),
+                tr("Tu usuario no tiene establecimiento asignado.") + "\n" + tr("Selecciona uno:"),
                 nombres,
                 0,
                 False
             )
 
             if ok and seleccion:
-                if seleccion == "➕ Crear nuevo establecimiento":
+                if seleccion == tr("➕ Crear nuevo establecimiento"):
                     # Crear nuevo
                     dialog = EstablecimientoDialog(self.db, es_inicial=False, parent=self)
                     if dialog.exec_():
@@ -613,10 +765,10 @@ class LoginDialog(QDialog):
             return False
         else:
             # No hay establecimientos, crear uno nuevo obligatoriamente
-            QMessageBox.information(
+            notify_success(
                 self,
-                "Crear Establecimiento",
-                "No hay establecimientos configurados.\nDebes crear uno para continuar."
+                tr("Crear Establecimiento"),
+                tr("No hay establecimientos configurados.") + "\n" + tr("Debes crear uno para continuar.")
             )
 
             dialog = EstablecimientoDialog(self.db, es_inicial=True, parent=self)
@@ -646,11 +798,11 @@ class LoginDialog(QDialog):
 
         # Validaciones
         if not nombre or not username or not password:
-            QMessageBox.warning(self, tr("Campos Vacíos"), tr("Completa todos los campos"))
+            notify_warning(self, tr("Campos Vacíos"), tr("Completa todos los campos"))
             return
 
         if password != password2:
-            QMessageBox.warning(self, tr("Error"), tr("Las contraseñas no coinciden"))
+            notify_warning(self, tr("Error"), tr("Las contraseñas no coinciden"))
             return
 
         # Crear usuario
@@ -675,17 +827,17 @@ class LoginDialog(QDialog):
                         establecimiento_creado = True
                 else:
                     # El usuario intentó cancelar, avisar que es obligatorio
-                    QMessageBox.warning(
+                    notify_warning(
                         self,
-                        "Establecimiento Requerido",
-                        "Debes crear un establecimiento para continuar.\n"
-                        "Cada usuario debe estar asociado a un establecimiento."
+                        tr("Establecimiento Requerido"),
+                        tr("Debes crear un establecimiento para continuar.") + "\n" +
+                        tr("Cada usuario debe estar asociado a un establecimiento.")
                     )
 
             # Mostrar la llave de recuperación
             self.mostrar_llave(llave)
         else:
-            QMessageBox.critical(self, tr("Error"), mensaje)
+            notify_error(self, tr("Error"), mensaje)
 
     def recuperar_password(self):
         """Recupera la contraseña usando la llave maestra"""
@@ -695,20 +847,20 @@ class LoginDialog(QDialog):
         password2 = self.recovery_password2.text()
 
         if not username or not key or not password:
-            QMessageBox.warning(self, tr("Campos Vacíos"), tr("Completa todos los campos"))
+            notify_warning(self, tr("Campos Vacíos"), tr("Completa todos los campos"))
             return
 
         if password != password2:
-            QMessageBox.warning(self, tr("Error"), tr("Las contraseñas no coinciden"))
+            notify_warning(self, tr("Error"), tr("Las contraseñas no coinciden"))
             return
 
         exito, mensaje = self.auth_manager.recuperar_password_con_llave(username, key, password)
 
         if exito:
-            QMessageBox.information(self, tr("Éxito"), mensaje)
+            notify_success(self, tr("Éxito"), mensaje)
             self.mostrar_login()
         else:
-            QMessageBox.critical(self, tr("Error"), mensaje)
+            notify_error(self, tr("Error"), mensaje)
 
     def obtener_usuario_logueado(self):
         """Retorna el usuario que hizo login correctamente"""
@@ -808,10 +960,15 @@ class LoginDialog(QDialog):
             exito, mensaje = self.auth_manager.login(username, password)
 
             if exito:
-                self.usuario_logueado = self.auth_manager.obtener_usuario_actual()
+                usuario = self.auth_manager.obtener_usuario_actual()
+                # Si tiene 2FA, no se puede hacer autologin
+                if self.auth_manager.tiene_totp(usuario['id']):
+                    self.auth_manager.logout()
+                    self._set_config('login_autologin', '0')
+                    return False
+                self.usuario_logueado = usuario
                 return True
             else:
-                # Si falla, desactivar auto-login pero mantener recordar
                 self._set_config('login_autologin', '0')
                 return False
 

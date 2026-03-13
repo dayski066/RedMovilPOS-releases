@@ -24,7 +24,7 @@ class CategoriaManager:
                 (nombre, descripcion)
             )
             return categoria_id
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al crear categoría: {e}")
             return None
 

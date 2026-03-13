@@ -122,18 +122,7 @@ class CajaTPVTab(QWidget):
 
         # Saldo de caja actual - INFO
         saldo_caja_frame = QFrame()
-        saldo_caja_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2E3440;
-                border: 2px solid #5E81AC;
-                border-radius: 8px;
-                padding: 10px;
-            }
-            QLabel {
-                color: #D8DEE9;
-                background: transparent;
-            }
-        """)
+        saldo_caja_frame.setObjectName("cardPanel")
         saldo_caja_layout = QHBoxLayout(saldo_caja_frame)
         saldo_caja_label_text = QLabel(f"💰 <b>{tr('Saldo Caja')}:</b>")
         saldo_caja_label_text.setStyleSheet("font-family: 'Segoe UI', Arial, sans-serif; color: #D8DEE9; font-size: 13px;")
@@ -145,20 +134,9 @@ class CajaTPVTab(QWidget):
         saldo_caja_layout.addWidget(self.saldo_caja_label)
         left_layout.addWidget(saldo_caja_frame)
 
-        # Panel de totales - DARK MODE
+        # Panel de totales - Card UI
         totales_frame = QFrame()
-        totales_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2E3440;
-                border: 2px solid #4C566A;
-                border-radius: 10px;
-                padding: 15px;
-            }
-            QLabel {
-                color: #D8DEE9;
-                background: transparent;
-            }
-        """)
+        totales_frame.setObjectName("cardPanel")
         totales_layout = QGridLayout(totales_frame)
 
         # Labels de totales
@@ -266,21 +244,22 @@ class CajaTPVTab(QWidget):
         btn_add.setShortcut("F2")  # Atajo de teclado
         acciones_layout.addWidget(btn_add, 0, 0)
 
-        # Botón = (Cobrar) - F1
-        btn_cobrar = QPushButton("= (F1)")
+        # Botón = (Cobrar) - F5
+        btn_cobrar = QPushButton("= (F5)")
         btn_cobrar.setFont(QFont("", 24, QFont.Bold))
         btn_cobrar.setMinimumHeight(70)
         apply_btn_warning(btn_cobrar)
         btn_cobrar.clicked.connect(self.abrir_cobro)
-        btn_cobrar.setShortcut("F1")  # Atajo de teclado
+        btn_cobrar.setShortcut("F5")  # Atajo de teclado (F5 en lugar de F1)
         acciones_layout.addWidget(btn_cobrar, 0, 1)
 
-        # Botón limpiar carrito
-        btn_limpiar = QPushButton(tr("Limpiar") + "\n" + tr("Carrito"))
+        # Botón limpiar carrito - F1
+        btn_limpiar = QPushButton(tr("Limpiar (F1)") + "\n" + tr("Carrito"))
         btn_limpiar.setFont(QFont("", 12, QFont.Bold))
         btn_limpiar.setMinimumHeight(70)
         apply_btn_danger(btn_limpiar)
         btn_limpiar.clicked.connect(self.limpiar_carrito)
+        btn_limpiar.setShortcut("F1") # Atajo F1
         acciones_layout.addWidget(btn_limpiar, 1, 0, 1, 2)
 
         right_layout.addLayout(acciones_layout)
@@ -372,6 +351,9 @@ class CajaTPVTab(QWidget):
         """Busca producto por código EAN y lo añade al carrito"""
         ean = self.ean_input.text().strip()
         if not ean:
+            # Si se presiona Enter sin escanear nada y hay productos, ir al cobro rápido
+            if self.carrito:
+                self.abrir_cobro()
             return
 
         # Buscar producto en BD
@@ -389,10 +371,12 @@ class CajaTPVTab(QWidget):
             )
             self.ean_input.clear()
             self.limpiar_cantidad()
+            self.ean_input.setFocus()
         else:
             notify_warning(self, tr("Producto No Encontrado"),
                               tr("No se encontró ningún producto con EAN/IMEI") + f": {ean}")
             self.ean_input.selectAll()
+            self.ean_input.setFocus()
 
     def añadir_al_carrito(self, producto_id, nombre, precio, cantidad=1):
         """Añade un producto al carrito"""
@@ -478,6 +462,12 @@ class CajaTPVTab(QWidget):
 
     def actualizar_tabla_carrito(self):
         """Actualiza la tabla del carrito"""
+        # Desconectar signals de widgets embebidos antes de limpiar filas
+        for row in range(self.tabla_carrito.rowCount()):
+            for col in range(self.tabla_carrito.columnCount()):
+                widget = self.tabla_carrito.cellWidget(row, col)
+                if widget:
+                    widget.deleteLater()
         self.tabla_carrito.setRowCount(0)
 
         for idx, item in enumerate(self.carrito):
@@ -688,6 +678,7 @@ class CajaTPVTab(QWidget):
                 self.actualizar_tabla_carrito()
                 self.calcular_totales()
                 self.limpiar_cantidad()
+                self.ean_input.setFocus()
 
     def abrir_producto_manual(self):
         """Abre diálogo para añadir producto manual"""
@@ -773,6 +764,7 @@ class CajaTPVTab(QWidget):
                 self.actualizar_tabla_carrito()
                 self.calcular_totales()
                 self.limpiar_cantidad()
+                self.ean_input.setFocus()
 
                 # Actualizar saldo de caja
                 self.actualizar_saldo_caja()
@@ -1024,6 +1016,11 @@ class CajaTPVTab(QWidget):
             + tr("Estado de caja") + f": {estado}\n\n"
             + "👉 " + tr("Vaya a") + ": " + tr("Caja") + " → " + tr("Movimientos")
         )
+
+    def showEvent(self, event):
+        """Evento al mostrar la pestaña"""
+        super().showEvent(event)
+        self.ean_input.setFocus()
 
     def closeEvent(self, event):
         """Cierra la conexión a la base de datos al cerrar el tab"""

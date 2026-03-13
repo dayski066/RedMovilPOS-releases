@@ -4,6 +4,7 @@ Gestor de devoluciones/reembolsos
 import sqlite3
 from datetime import datetime
 from app.utils.logger import get_logger
+from app.exceptions import DatabaseQueryError
 
 # Logger para el módulo de devoluciones
 logger = get_logger('devoluciones')
@@ -223,7 +224,7 @@ class DevolucionManager:
         except sqlite3.Error as e:
             # Propagar excepción en lugar de solo advertir
             # (estamos dentro de una transacción que debe revertirse si falla)
-            raise Exception(f"Error registrando egreso por devolución: {str(e)}")
+            raise DatabaseQueryError(original_error=f"Error registrando egreso por devolución: {str(e)}")
 
     def obtener_devoluciones(self, filtros=None):
         """Obtiene historico de devoluciones"""

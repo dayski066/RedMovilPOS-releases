@@ -1,0 +1,42 @@
+/* === Botones de Acción (Iconos en tablas) === */
+QPushButton[class~="action"] {
+    background-color: transparent;
+    color: C_TEXT_PRIMARY;
+    border: 1px solid transparent; /* Para mantener el tamaño */
+    padding: 0px;
+    margin: 0px;
+    border-radius: 4px;
+}
+
+QPushButton[class~="action"]:hover {
+    background-color: #3B4252;
+}
+
+/* Colores de borde en hover para dar feedback */
+QPushButton[class~="action-view"]:hover {
+    border: 1px solid #B48EAD;
+}
+QPushButton[class~="action-edit"]:hover {
+    border: 1px solid #5E81AC;
+}
+QPushButton[class~="action-delete"]:hover {
+    border: 1px solid #BF616A;
+}
+QPushButton[class~="action-print"]:hover {
+    border: 1px solid #A3BE8C;
+}
+QPushButton[class~="action-status"]:hover {
+    border: 1px solid #EBCB8B;
+}
+QPushButton[class~="action-password"]:hover {
+    border: 1px solid #D08770;
+}
+QPushButton[class~="action-activate"]:hover {
+    border: 1px solid #A3BE8C;
+}
+QPushButton[class~="action-deactivate"]:hover {
+    border: 1px solid #BF616A;
+}
+QPushButton[class~="action-download"]:hover {
+    border: 1px solid #5E81AC;
+}

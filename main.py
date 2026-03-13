@@ -182,6 +182,7 @@ def main():
 
     # Bucle de login - permitir múltiples intentos
     primera_vez = True  # Auto-login solo en la primera apertura
+    exit_code = 0       # Inicializar código de salida
     
     from app.i18n import get_translator
 
@@ -189,69 +190,82 @@ def main():
         # Refrescar idioma por si cambió en la sesión anterior
         get_translator().refresh_language()
 
-        # Mostrar ventana de login
-        # permitir_autologin=True solo la primera vez, no cuando se cierra sesión
-        login_dialog = LoginDialog(db, auth_manager, permitir_autologin=primera_vez)
-        primera_vez = False  # Las siguientes veces NO hacer auto-login
+        usuario = auth_manager.obtener_usuario_actual()
 
-        if login_dialog.exec_():
-            # Login exitoso - obtener usuario
-            usuario = auth_manager.obtener_usuario_actual()
+        # Mostrar ventana de login si no venimos de un reinicio interno
+        if exit_code != 888:
+            login_dialog = LoginDialog(db, auth_manager, permitir_autologin=primera_vez)
+            primera_vez = False  # Las siguientes veces NO hacer auto-login
 
-            if usuario:
+            if login_dialog.exec_():
+                # Login exitoso - obtener usuario
+                usuario = auth_manager.obtener_usuario_actual()
+            else:
+                # Usuario canceló el login
+                print("[X] Login cancelado\n")
+                db.disconnect()
+                sys.exit(0)
+
+        if usuario:
+            if exit_code != 888:
                 print(f"[OK] Usuario autenticado: {usuario['nombre_completo']} ({usuario['rol']})\n")
 
-                # Mostrar diálogo de carga mientras se inicializa la ventana principal
-                loading = LoadingDialog()
-                loading.show()
+            # Mostrar diálogo de carga con bienvenida al usuario
+            loading = LoadingDialog(welcome_name=usuario['nombre_completo'])
+            loading.show()
 
-                # Procesar eventos múltiples veces para asegurar que el loading
-                # se renderice completamente y las animaciones comiencen
-                for _ in range(5):
-                    app.processEvents()
-
-                # Pequeño delay para que el usuario vea el loading antes del bloqueo
-                # Esto permite que las animaciones se muestren correctamente
-                loop = QEventLoop()
-                QTimer.singleShot(150, loop.quit)
-                loop.exec_()
-
-                # Crear ventana principal (puede tardar - el loading ya está visible)
-                window = MainWindow(auth_manager)
-
-                # Procesar eventos para asegurar que MainWindow está lista
+            # Procesar eventos múltiples veces para asegurar que el loading
+            # se renderice completamente y las animaciones comiencen
+            for _ in range(5):
                 app.processEvents()
 
-                # Cerrar loading y mostrar ventana principal
-                loading.close()
-                app.processEvents()  # Asegurar que el loading se cerró
-                window.show()
+            # Pequeño delay para que el usuario vea el loading antes del bloqueo
+            # Esto permite que las animaciones se muestren correctamente
+            loop = QEventLoop()
+            QTimer.singleShot(150, loop.quit)
+            loop.exec_()
 
-                # Ejecutar aplicación
-                exit_code = app.exec_()
+            # Crear ventana principal (puede tardar - el loading ya está visible)
+            window = MainWindow(auth_manager)
 
-                # Si se cerró sesión (no cerró la app), volver al login
-                if auth_manager.obtener_usuario_actual() is None:
-                    print("\n[OK] Sesión cerrada\n")
-                    continue  # Volver a mostrar login
-                else:
-                    # Usuario cerró la aplicación
-                    db.disconnect()
-                    sys.exit(exit_code)
+            # Procesar eventos para asegurar que MainWindow está lista
+            app.processEvents()
+
+            # Cerrar loading y mostrar ventana principal
+            loading.close()
+            app.processEvents()  # Asegurar que el loading se cerró
+            window.show()
+
+            # Ejecutar aplicación
+            exit_code = app.exec_()
+            
+            # Limpiar la ventana antigua para que no se quede abierta en memoria y pantalla
+            if 'window' in locals() and window:
+                window.hide()
+                window.deleteLater()
+            
+            # Si se solicitó reinicio interno (hot reload)
+            if exit_code == 888:
+                print("\n[OK] Reiniciando interfaz de aplicación...\n")
+                continue # Volver al inicio del bucle saltando el login
+
+            # Si se cerró sesión (no cerró la app), volver al login
+            if auth_manager.obtener_usuario_actual() is None:
+                print("\n[OK] Sesión cerrada\n")
+                continue  # Volver a mostrar login
             else:
-                # No se obtuvo usuario (error inesperado)
-                QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Error al obtener información del usuario"
-                )
+                # Usuario cerró la aplicación completamente
                 db.disconnect()
-                sys.exit(1)
+                sys.exit(exit_code)
         else:
-            # Usuario canceló el login
-            print("[X] Login cancelado\n")
+            # No se obtuvo usuario (error inesperado)
+            QMessageBox.critical(
+                None,
+                "Error",
+                "Error al obtener información del usuario"
+            )
             db.disconnect()
-            sys.exit(0)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

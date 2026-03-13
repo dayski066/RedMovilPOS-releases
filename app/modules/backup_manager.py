@@ -93,7 +93,7 @@ class BackupManager:
 
             return True, backup_path
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Error creando backup: {e}", exc_info=True)
             return False, f"Error: {str(e)}"
 
@@ -122,7 +122,7 @@ class BackupManager:
                     logger.debug(f"Backup automático omitido: último hace {horas_transcurridas:.1f} horas")
                     return False, f"Último backup hace {horas_transcurridas:.1f} horas"
 
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except (ValueError, IndexError) as e:
                 logger.warning(f"No se pudo verificar fecha de último backup: {e}")
 
         # Realizar backup automático
@@ -143,7 +143,7 @@ class BackupManager:
                 logger.warning(f"Integridad fallida: {result}")
                 return False
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error verificando integridad: {e}")
             return False
 
@@ -154,7 +154,7 @@ class BackupManager:
             if backups:
                 return backups[0]['ruta']  # Ya están ordenados por fecha desc
             return None
-        except (sqlite3.Error, OSError, ValueError):
+        except OSError:
             return None
 
     def _limpiar_backups_antiguos(self):
@@ -168,10 +168,10 @@ class BackupManager:
                     try:
                         os.remove(backup['ruta'])
                         logger.info(f"Backup antiguo eliminado: {backup['nombre']}")
-                    except (sqlite3.Error, OSError, ValueError) as e:
+                    except OSError as e:
                         logger.warning(f"No se pudo eliminar backup: {e}")
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except OSError as e:
             logger.error(f"Error limpiando backups antiguos: {e}")
 
     def listar_backups(self) -> list:
@@ -200,7 +200,7 @@ class BackupManager:
             # Ordenar por fecha de modificación (más reciente primero)
             backups.sort(key=lambda x: x['fecha_modificacion'], reverse=True)
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except OSError as e:
             logger.error(f"Error listando backups: {e}")
 
         return backups
@@ -234,7 +234,7 @@ class BackupManager:
             logger.info(f"Base de datos restaurada desde: {backup_path}")
             return True, "Base de datos restaurada correctamente"
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Error restaurando backup: {e}", exc_info=True)
             return False, f"Error al restaurar: {str(e)}"
 
@@ -273,14 +273,14 @@ class BackupManager:
                     try:
                         cursor.execute(f"SELECT COUNT(*) FROM {tabla}")
                         info['registros'][tabla] = cursor.fetchone()[0]
-                    except (sqlite3.Error, OSError, ValueError):
+                    except sqlite3.Error:
                         info['registros'][tabla] = 0
 
                 conn.close()
 
             return info
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Error obteniendo info de backup: {e}")
             return {'error': str(e)}
 
@@ -308,6 +308,6 @@ def realizar_backup_inicial(db_path: str) -> bool:
 
         return exito
 
-    except (sqlite3.Error, OSError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error en backup inicial: {e}")
         return False

@@ -3,6 +3,7 @@ Gestor de reparaciones (SAT)
 Incluye generación de códigos QR para localización rápida de órdenes
 """
 import sqlite3
+from app.exceptions import ValidationError, DatabaseQueryError, CajaError
 from app.utils.qr_generator import QRGenerator
 from app.utils.logger import get_logger
 
@@ -17,30 +18,36 @@ class ReparacionManager:
     def obtener_siguiente_numero(self):
         """
         Obtiene el siguiente número de orden (formato O00001) de forma atómica.
-        Usa UPDATE + SELECT para evitar condiciones de carrera.
+        Usa transacción explícita + UPDATE + SELECT para evitar condiciones de carrera.
         """
-        # Actualizar atómicamente e incrementar en 1
-        self.db.execute_query(
-            """UPDATE configuracion
-               SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
-               WHERE clave = 'ultimo_numero_reparacion'"""
-        )
+        if not self.db.begin_transaction():
+            raise DatabaseQueryError(original_error="No se pudo iniciar transacción para generar número de reparación")
 
-        # Obtener el valor actualizado
-        config = self.db.fetch_one(
-            "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_reparacion'"
-        )
-
-        if config:
-            siguiente = int(config['valor'])
-        else:
-            # Si no existe, crear con valor 1
-            siguiente = 1
+        try:
             self.db.execute_query(
-                "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_reparacion', '1')"
+                """UPDATE configuracion
+                   SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
+                   WHERE clave = 'ultimo_numero_reparacion'"""
             )
 
-        return f"O{siguiente:05d}"  # O00001, O00002, etc.
+            config = self.db.fetch_one(
+                "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_reparacion'"
+            )
+
+            if config:
+                siguiente = int(config['valor'])
+            else:
+                siguiente = 1
+                self.db.execute_query(
+                    "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_reparacion', '1')"
+                )
+
+            self.db.commit()
+            return f"O{siguiente:05d}"  # O00001, O00002, etc.
+
+        except sqlite3.Error as e:
+            self.db.rollback()
+            raise DatabaseQueryError(original_error=f"Error generando número de reparación: {e}")
 
     def actualizar_numero_reparacion(self, numero):
         """
@@ -70,7 +77,7 @@ class ReparacionManager:
         try:
             # Validar datos básicos
             if not datos.get('items'):
-                raise ValueError("La reparación debe tener al menos un dispositivo")
+                raise ValidationError("La reparación debe tener al menos un dispositivo", code="REPARACION_SIN_DISPOSITIVOS")
 
             # 1. Guardar/Buscar Cliente
             cliente_id = None
@@ -108,7 +115,7 @@ class ReparacionManager:
                     )
 
                     if not cliente_id:
-                        raise Exception("No se pudo crear el cliente")
+                        raise DatabaseQueryError(original_error="No se pudo crear el cliente")
 
             # 2. Insertar Reparación (Cabecera)
             # Calculamos totales basados en los items
@@ -116,7 +123,7 @@ class ReparacionManager:
             for item in datos['items']:
                 precio = item.get('precio_estimado', 0)
                 if precio < 0:
-                    raise ValueError(f"Precio estimado inválido: {precio}")
+                    raise ValidationError(f"Precio estimado inválido: {precio}", code="PRECIO_INVALIDO")
                 costo_estimado_total += precio
 
             # Usamos los datos del PRIMER dispositivo como resumen para compatibilidad con campos legacy
@@ -148,7 +155,7 @@ class ReparacionManager:
             )
 
             if not reparacion_id:
-                raise Exception("No se pudo insertar la reparación")
+                raise DatabaseQueryError(original_error="No se pudo insertar la reparación")
 
             # 3. Insertar Items y sus Averías
             for item in datos['items']:
@@ -166,7 +173,7 @@ class ReparacionManager:
                 )
 
                 if not item_id:
-                    raise Exception(f"No se pudo insertar dispositivo con IMEI: {item.get('imei')}")
+                    raise DatabaseQueryError(original_error=f"No se pudo insertar dispositivo con IMEI: {item.get('imei')}")
 
                 # Insertar las averías del dispositivo
                 averias = item.get('averias', [])
@@ -180,7 +187,7 @@ class ReparacionManager:
                     )
 
                     if not averia_id:
-                        raise Exception(f"No se pudo insertar avería: {averia.get('averia_texto')}")
+                        raise DatabaseQueryError(original_error=f"No se pudo insertar avería: {averia.get('averia_texto')}")
 
             # 4. REGISTRAR AUDITORÍA (creación de reparación)
             if usuario_id:
@@ -202,7 +209,7 @@ class ReparacionManager:
             logger.info(f"Reparación {datos['numero']} guardada exitosamente")
             return reparacion_id
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             # REVERTIR TRANSACCIÓN - Algo falló
             self.db.rollback()
             logger.error(f"Error guardando reparación (transacción revertida): {e}")
@@ -299,6 +306,44 @@ class ReparacionManager:
         query += " ORDER BY fecha_entrada DESC, id DESC"
         return self.db.fetch_all(query, params if params else None)
 
+    def buscar_reparaciones_paginado(self, filtros=None, limit=50, offset=0):
+        """Busca reparaciones con paginación. Retorna (reparaciones, total_count)"""
+        where_parts = []
+        params = []
+
+        if filtros:
+            if filtros.get('fecha_desde'):
+                where_parts.append("fecha_entrada >= ?")
+                params.append(filtros['fecha_desde'])
+            if filtros.get('fecha_hasta'):
+                where_parts.append("fecha_entrada <= ?")
+                params.append(filtros['fecha_hasta'])
+            if filtros.get('cliente'):
+                where_parts.append("cliente_nombre LIKE ?")
+                params.append(f"%{filtros['cliente']}%")
+            if filtros.get('numero'):
+                where_parts.append("numero_orden LIKE ?")
+                params.append(f"%{filtros['numero']}%")
+            if filtros.get('estado'):
+                where_parts.append("estado = ?")
+                params.append(filtros['estado'])
+
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_result = self.db.fetch_one(
+            f"SELECT COUNT(*) as total FROM reparaciones WHERE {where_clause}",
+            params if params else None
+        )
+        total = count_result['total'] if count_result else 0
+
+        data_params = (params + [limit, offset]) if params else [limit, offset]
+        reparaciones = self.db.fetch_all(
+            f"SELECT * FROM reparaciones WHERE {where_clause} ORDER BY fecha_entrada DESC, id DESC LIMIT ? OFFSET ?",
+            data_params
+        )
+
+        return reparaciones, total
+
     def actualizar_estado(self, reparacion_id, nuevo_estado, metodo_pago='efectivo', usuario_id=None):
         """
         Actualiza el estado de una reparación.
@@ -309,13 +354,13 @@ class ReparacionManager:
         # Obtener reparación para verificar estado anterior y monto
         reparacion = self.obtener_reparacion(reparacion_id)
         if not reparacion:
-            raise Exception("Reparación no encontrada")
+            raise ValidationError("Reparación no encontrada", code="REPARACION_NO_ENCONTRADA")
 
         estado_anterior = reparacion.get('estado')
 
         # INICIAR TRANSACCIÓN
         if not self.db.begin_transaction():
-            raise Exception("No se pudo iniciar transacción")
+            raise DatabaseQueryError(original_error="No se pudo iniciar transacción")
 
         try:
             # Actualizar estado
@@ -340,16 +385,16 @@ class ReparacionManager:
                     
                     if estado_caja == 'cierre_pendiente':
                         fecha_pendiente = data_caja['fecha'] if data_caja else 'anterior'
-                        raise Exception(f"Hay una caja del dia {fecha_pendiente} sin cerrar.\n\nVaya a: Caja -> Movimientos\nUse el boton [Cerrar Caja]")
+                        raise CajaError(f"Hay una caja del dia {fecha_pendiente} sin cerrar.\n\nVaya a: Caja -> Movimientos\nUse el boton [Cerrar Caja]", estado=estado_caja)
 
                     if estado_caja in ['apertura_requerida', 'apertura_nueva_dia']:
-                        raise Exception(f"La caja de hoy no esta abierta.\n\nVaya a: Caja -> Movimientos\nUse el boton [Abrir Caja]")
+                        raise CajaError(f"La caja de hoy no esta abierta.\n\nVaya a: Caja -> Movimientos\nUse el boton [Abrir Caja]", estado=estado_caja)
 
                     if estado_caja == 'reapertura_requerida':
-                        raise Exception(f"La caja de hoy ya fue cerrada.\n\nVaya a: Caja -> Movimientos\nPara reabrir la caja")
+                        raise CajaError(f"La caja de hoy ya fue cerrada.\n\nVaya a: Caja -> Movimientos\nPara reabrir la caja", estado=estado_caja)
 
                     if estado_caja != 'ok':
-                        raise Exception(f"Estado de caja no valido: {estado_caja}.\n\nVaya a: Caja -> Movimientos")
+                        raise CajaError(f"Estado de caja no valido: {estado_caja}.\n\nVaya a: Caja -> Movimientos", estado=estado_caja)
 
                     movimiento_id = caja_mgr.registrar_movimiento_automatico(
                         tipo='ingreso',
@@ -362,7 +407,7 @@ class ReparacionManager:
                     )
 
                     if not movimiento_id:
-                        raise Exception("No se pudo registrar el movimiento de caja")
+                        raise DatabaseQueryError(original_error="No se pudo registrar el movimiento de caja")
 
                     logger.info(f"Ingreso registrado en caja: {monto}€ por reparación {reparacion['numero_orden']}")
 
@@ -386,7 +431,10 @@ class ReparacionManager:
             self.db.commit()
             logger.info(f"Estado de reparación {reparacion['numero_orden']} actualizado a '{nuevo_estado}'")
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except CajaError:
+            self.db.rollback()
+            raise
+        except sqlite3.Error as e:
             # REVERTIR TRANSACCIÓN
             self.db.rollback()
             logger.error(f"Error actualizando reparación (transacción revertida): {e}")
@@ -425,7 +473,7 @@ class ReparacionManager:
                     logger.warning(f"Error registrando auditoría: {audit_error}")
 
             return True, f"Orden {reparacion['numero_orden']} eliminada correctamente"
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             return False, f"Error al eliminar: {str(e)}"
 
     def guardar_recambios(self, reparacion_id, recambios, usuario_id=None):
@@ -473,13 +521,14 @@ class ReparacionManager:
                     )
 
                     if not producto:
-                        raise Exception(f"Producto ID {producto_id} no encontrado")
+                        raise ValidationError(f"Producto ID {producto_id} no encontrado", code="PRODUCTO_NO_ENCONTRADO")
 
                     stock_actual = producto.get('stock', 0) or 0
                     if stock_actual < cantidad:
-                        raise Exception(
+                        raise ValidationError(
                             f"Stock insuficiente para '{producto['descripcion']}'. "
-                            f"Disponible: {stock_actual}, Solicitado: {cantidad}"
+                            f"Disponible: {stock_actual}, Solicitado: {cantidad}",
+                            code="STOCK_INSUFICIENTE"
                         )
 
                     # Descontar stock
@@ -489,7 +538,7 @@ class ReparacionManager:
                     )
 
                     if result is None:
-                        raise Exception(f"No se pudo descontar stock del producto ID {producto_id}")
+                        raise DatabaseQueryError(original_error=f"No se pudo descontar stock del producto ID {producto_id}")
 
                     # Usar código EAN del producto si no se especificó
                     if not codigo_ean:
@@ -504,7 +553,7 @@ class ReparacionManager:
                 )
 
                 if not recambio_id:
-                    raise Exception(f"No se pudo insertar recambio: {descripcion}")
+                    raise DatabaseQueryError(original_error=f"No se pudo insertar recambio: {descripcion}")
 
             # Registrar en auditoría
             if usuario_id:
@@ -534,7 +583,7 @@ class ReparacionManager:
             logger.info(f"{len(recambios)} recambios guardados para reparación {reparacion['numero_orden']}")
             return True
 
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             # REVERTIR TRANSACCIÓN
             self.db.rollback()
             logger.error(f"Error guardando recambios (transacción revertida): {e}")

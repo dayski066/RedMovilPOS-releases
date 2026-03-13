@@ -5,6 +5,7 @@ Base de datos integrada - NO requiere instalación
 import sqlite3
 import os
 import sys
+import threading
 import bcrypt
 
 # Añadir el directorio raíz al path
@@ -24,12 +25,16 @@ class Database:
     """
     _instance = None
     _shared_connection = None
+    _lock = threading.Lock()
     
     def __new__(cls):
-        """Patrón Singleton: siempre devuelve la misma instancia"""
+        """Patrón Singleton thread-safe: siempre devuelve la misma instancia"""
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._lock:
+                # Double-check locking
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
         return cls._instance
     
     def __init__(self):
@@ -39,6 +44,7 @@ class Database:
         self._initialized = True
         self.db_path = DB_PATH
         self._in_transaction = False
+        self._transaction_depth = 0
         # Usar conexión compartida
         self.connection = Database._shared_connection
 
@@ -63,13 +69,14 @@ class Database:
             Database._shared_connection = sqlite3.connect(self.db_path, check_same_thread=False)
             Database._shared_connection.row_factory = sqlite3.Row
             Database._shared_connection.execute("PRAGMA foreign_keys = ON")
-            
+            Database._shared_connection.execute("PRAGMA journal_mode = WAL")
+
             # Asignar a instancia
             self.connection = Database._shared_connection
             
             logger.info(f"Conexión SQLite establecida: {self.db_path}")
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error al conectar con SQLite: {e}")
             return False
 
@@ -527,7 +534,7 @@ class Database:
                 producto_id INTEGER,
                 nombre TEXT NOT NULL,
                 precio REAL NOT NULL,
-                color TEXT DEFAULT '#3498db',
+                color TEXT DEFAULT '#5E81AC',
                 orden INTEGER DEFAULT 0,
                 es_manual INTEGER DEFAULT 0,
                 fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -605,6 +612,13 @@ class Database:
             logger.info("Añadiendo columna establecimiento_id a usuarios...")
             cursor.execute("ALTER TABLE usuarios ADD COLUMN establecimiento_id INTEGER")
             logger.info("Columna establecimiento_id añadida")
+
+        # Migración TOTP 2FA
+        if 'totp_secret' not in columnas:
+            logger.info("Añadiendo columnas TOTP 2FA a usuarios...")
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN totp_secret TEXT DEFAULT NULL")
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN totp_habilitado INTEGER DEFAULT 0")
+            logger.info("Columnas TOTP 2FA añadidas")
 
         # Añadir columna metodo_pago a caja_movimientos si no existe
         cursor.execute("PRAGMA table_info(caja_movimientos)")
@@ -705,6 +719,25 @@ class Database:
             cursor.execute("ALTER TABLE productos ADD COLUMN estado TEXT")
             logger.info("Columna estado añadida")
 
+        # Añadir columnas cp y ciudad a establecimientos si no existen
+        cursor.execute("PRAGMA table_info(establecimientos)")
+        columnas_establecimientos = [col[1] for col in cursor.fetchall()]
+
+        if 'cp' not in columnas_establecimientos:
+            logger.info("Añadiendo columna cp a establecimientos...")
+            cursor.execute("ALTER TABLE establecimientos ADD COLUMN cp TEXT")
+            logger.info("Columna cp añadida")
+
+        if 'ciudad' not in columnas_establecimientos:
+            logger.info("Añadiendo columna ciudad a establecimientos...")
+            cursor.execute("ALTER TABLE establecimientos ADD COLUMN ciudad TEXT")
+            logger.info("Columna ciudad añadida")
+
+        if 'provincia' not in columnas_establecimientos:
+            logger.info("Añadiendo columna provincia a establecimientos...")
+            cursor.execute("ALTER TABLE establecimientos ADD COLUMN provincia TEXT")
+            logger.info("Columna provincia añadida")
+
         # Añadir columnas de codigo_postal y ciudad a clientes si no existen
         cursor.execute("PRAGMA table_info(clientes)")
         columnas_clientes = [col[1] for col in cursor.fetchall()]
@@ -718,6 +751,11 @@ class Database:
             logger.info("Añadiendo columna ciudad a clientes...")
             cursor.execute("ALTER TABLE clientes ADD COLUMN ciudad TEXT")
             logger.info("Columna ciudad añadida")
+
+        if 'provincia' not in columnas_clientes:
+            logger.info("Añadiendo columna provincia a clientes...")
+            cursor.execute("ALTER TABLE clientes ADD COLUMN provincia TEXT")
+            logger.info("Columna provincia añadida")
 
         # Añadir columnas a compras
         cursor.execute("PRAGMA table_info(compras)")
@@ -733,6 +771,11 @@ class Database:
             cursor.execute("ALTER TABLE compras ADD COLUMN proveedor_ciudad TEXT")
             logger.info("Columna proveedor_ciudad añadida")
 
+        if 'proveedor_provincia' not in columnas_compras:
+            logger.info("Añadiendo columna proveedor_provincia a compras...")
+            cursor.execute("ALTER TABLE compras ADD COLUMN proveedor_provincia TEXT")
+            logger.info("Columna proveedor_provincia añadida")
+
         # Añadir columnas a reparaciones
         cursor.execute("PRAGMA table_info(reparaciones)")
         columnas_reparaciones = [col[1] for col in cursor.fetchall()]
@@ -746,6 +789,11 @@ class Database:
             logger.info("Añadiendo columna cliente_ciudad a reparaciones...")
             cursor.execute("ALTER TABLE reparaciones ADD COLUMN cliente_ciudad TEXT")
             logger.info("Columna cliente_ciudad añadida")
+
+        if 'cliente_provincia' not in columnas_reparaciones:
+            logger.info("Añadiendo columna cliente_provincia a reparaciones...")
+            cursor.execute("ALTER TABLE reparaciones ADD COLUMN cliente_provincia TEXT")
+            logger.info("Columna cliente_provincia añadida")
 
         if 'qr_code' not in columnas_reparaciones:
             logger.info("Añadiendo columna qr_code a reparaciones...")
@@ -820,7 +868,7 @@ class Database:
                         ON productos(imei) WHERE imei IS NOT NULL AND imei != ''
                     """)
                     logger.info("Índice UNIQUE para IMEI creado")
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.warning(f"No se pudo crear índice UNIQUE para IMEI: {e}")
 
         # MIGRACIÓN: Crear trigger para validar stock no negativo
@@ -838,7 +886,7 @@ class Database:
                     END
                 """)
                 logger.info("Trigger validar_stock_no_negativo creado")
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.warning(f"No se pudo crear trigger de stock: {e}")
 
         # ========== SISTEMA DE AUDITORÍA DE USUARIOS ==========
@@ -896,7 +944,7 @@ class Database:
                         logger.info(f"Añadiendo columna fecha_modificacion a {tabla}...")
                         cursor.execute(f"ALTER TABLE {tabla} ADD COLUMN fecha_modificacion TIMESTAMP")
                         
-            except (sqlite3.Error, OSError, ValueError) as e:
+            except sqlite3.Error as e:
                 logger.warning(f"Error añadiendo columnas de auditoría a {tabla}: {e}")
 
         # ========== FIN SISTEMA DE AUDITORÍA ==========
@@ -976,6 +1024,16 @@ class Database:
                 WHERE cliente_id IS NOT NULL
             """)
             logger.info("Columnas de cliente añadidas a facturas y datos migrados")
+
+        if 'cliente_provincia' not in columnas_facturas:
+            logger.info("Añadiendo columna cliente_provincia a facturas...")
+            cursor.execute("ALTER TABLE facturas ADD COLUMN cliente_provincia TEXT")
+            cursor.execute("""
+                UPDATE facturas
+                SET cliente_provincia = (SELECT provincia FROM clientes WHERE clientes.id = facturas.cliente_id)
+                WHERE cliente_id IS NOT NULL
+            """)
+            logger.info("Columna cliente_provincia añadida a facturas y datos migrados")
 
         # Migrar datos de empresa desde configuracion a establecimientos
         self._migrar_datos_empresa(cursor)
@@ -1090,7 +1148,7 @@ class Database:
                 self.connection.commit()
 
             return cursor.lastrowid
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error ejecutando query: {e}")
             logger.debug(f"Query: {query}")
             logger.debug(f"Params: {params}")
@@ -1118,7 +1176,7 @@ class Database:
 
             cursor.close()
             return results
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error obteniendo datos: {e}")
             logger.debug(f"Query: {query}")
             return []
@@ -1137,62 +1195,70 @@ class Database:
 
             cursor.close()
             return result
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"Error obteniendo dato: {e}")
             logger.debug(f"Query: {query}")
             return None
 
     def begin_transaction(self):
         """
-        Inicia una transacción explícita.
-        Todas las operaciones siguientes serán parte de la transacción
-        hasta que se llame a commit() o rollback().
-
-        IMPORTANTE: SQLite usa autocommit por defecto. Este método
-        asegura que múltiples operaciones sean atómicas.
+        Inicia una transacción explícita con soporte de anidamiento.
+        Si ya hay una transacción activa, incrementa el contador de profundidad
+        sin abrir una nueva transacción DB. Así las llamadas internas (ej.
+        registrar_movimiento_automatico dentro de guardar_factura) quedan
+        dentro de la misma transacción atómica exterior.
         """
         try:
-            # Si ya hay una transacción activa, hacer commit primero
             if self._in_transaction:
-                self.connection.commit()
-                self._in_transaction = False
+                # Ya hay transacción activa — anidar sin hacer commit prematuro
+                self._transaction_depth += 1
+                return True
 
             self.connection.execute("BEGIN TRANSACTION")
             self._in_transaction = True
+            self._transaction_depth = 1
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"No se pudo iniciar transacción: {e}")
-            # Intentar recuperar haciendo rollback
             try:
                 self.connection.rollback()
-            except (sqlite3.Error, OSError, ValueError):
+            except sqlite3.Error:
                 pass
             self._in_transaction = False
+            self._transaction_depth = 0
             return False
 
     def commit(self):
         """
         Confirma la transacción actual.
-        Guarda todos los cambios realizados desde begin_transaction().
+        En transacciones anidadas, solo hace el COMMIT real cuando la
+        profundidad llega a 0 (el llamador exterior confirma).
         """
         try:
+            if self._transaction_depth > 1:
+                # Commit interno: decrementar nivel, no confirmar aún
+                self._transaction_depth -= 1
+                return True
             self.connection.commit()
-            self._in_transaction = False  # Desactivar flag
+            self._in_transaction = False
+            self._transaction_depth = 0
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"No se pudo confirmar transacción: {e}")
             return False
 
     def rollback(self):
         """
         Revierte la transacción actual.
-        Deshace todos los cambios realizados desde begin_transaction().
+        Siempre hace rollback real independientemente del nivel de anidamiento,
+        garantizando que cualquier fallo interno deshaga toda la operación.
         """
         try:
             self.connection.rollback()
-            self._in_transaction = False  # Desactivar flag
+            self._in_transaction = False
+            self._transaction_depth = 0
             return True
-        except (sqlite3.Error, OSError, ValueError) as e:
+        except sqlite3.Error as e:
             logger.error(f"No se pudo revertir transacción: {e}")
             return False
 

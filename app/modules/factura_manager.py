@@ -4,6 +4,7 @@ Gestor de facturas
 import sqlite3
 from config import INVOICE_PREFIX
 from app.utils.logger import get_logger
+from app.exceptions import ValidationError, DatabaseQueryError
 
 logger = get_logger('factura')
 
@@ -15,29 +16,37 @@ class FacturaManager:
     def obtener_siguiente_numero(self):
         """
         Obtiene el siguiente número de factura de forma atómica.
-        Usa UPDATE + SELECT para evitar condiciones de carrera.
+        Usa transacción explícita + UPDATE + SELECT para evitar condiciones de carrera.
         """
-        # Actualizar atómicamente e incrementar en 1
-        self.db.execute_query(
-            """UPDATE configuracion
-               SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
-               WHERE clave = 'ultimo_numero_factura'"""
-        )
+        if not self.db.begin_transaction():
+            raise DatabaseQueryError(original_error="No se pudo iniciar transacción para generar número de factura")
 
-        # Obtener el valor actualizado
-        config = self.db.fetch_one(
-            "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_factura'"
-        )
+        try:
+            self.db.execute_query(
+                """UPDATE configuracion
+                   SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT)
+                   WHERE clave = 'ultimo_numero_factura'"""
+            )
 
-        if config:
-            siguiente = int(config['valor'])
-            return f"{INVOICE_PREFIX}{siguiente}"
+            config = self.db.fetch_one(
+                "SELECT valor FROM configuracion WHERE clave = 'ultimo_numero_factura'"
+            )
 
-        # Si no existe, crear con valor 16 (según config inicial)
-        self.db.execute_query(
-            "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_factura', '16')"
-        )
-        return f"{INVOICE_PREFIX}16"
+            if config:
+                siguiente = int(config['valor'])
+                self.db.commit()
+                return f"{INVOICE_PREFIX}{siguiente}"
+
+            # Si no existe, crear con valor 16 (según config inicial)
+            self.db.execute_query(
+                "INSERT INTO configuracion (clave, valor) VALUES ('ultimo_numero_factura', '16')"
+            )
+            self.db.commit()
+            return f"{INVOICE_PREFIX}16"
+
+        except sqlite3.Error as e:
+            self.db.rollback()
+            raise DatabaseQueryError(original_error=f"Error generando número de factura: {e}")
 
     def actualizar_numero_factura(self, numero):
         """
@@ -67,10 +76,10 @@ class FacturaManager:
         try:
             # Validar datos básicos
             if not datos.get('items'):
-                raise ValueError("La factura debe tener al menos un item")
+                raise ValidationError("La factura debe tener al menos un item", code="FACTURA_SIN_ITEMS")
 
             if datos['totales']['total'] <= 0:
-                raise ValueError("El total de la factura debe ser mayor a 0")
+                raise ValidationError("El total de la factura debe ser mayor a 0", code="FACTURA_TOTAL_INVALIDO")
 
             # 1. Buscar o crear cliente
             cliente_id = None
@@ -99,41 +108,50 @@ class FacturaManager:
                 else:
                     # Crear nuevo cliente
                     cliente_id = self.db.execute_query(
-                        """INSERT INTO clientes (nombre, nif, direccion, codigo_postal, ciudad, telefono)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        """INSERT INTO clientes (nombre, nif, direccion, codigo_postal, ciudad, provincia, telefono)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         (nombre_cliente, nif_cliente,
                          datos['cliente'].get('direccion', ''), datos['cliente'].get('codigo_postal', ''),
-                         datos['cliente'].get('ciudad', ''), datos['cliente'].get('telefono', ''))
+                         datos['cliente'].get('ciudad', ''), datos['cliente'].get('provincia', ''),
+                         datos['cliente'].get('telefono', ''))
                     )
 
                     if not cliente_id:
-                        raise Exception("No se pudo crear el cliente")
+                        raise DatabaseQueryError(original_error="No se pudo crear el cliente")
 
             # 2. Insertar factura con datos del cliente embebidos (preservación histórica)
             factura_id = self.db.execute_query(
                 """INSERT INTO facturas (numero_factura, cliente_id, fecha, subtotal, iva, total,
-                                        cliente_nombre, cliente_nif, cliente_direccion, 
-                                        cliente_telefono, cliente_codigo_postal, cliente_ciudad)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                        cliente_nombre, cliente_nif, cliente_direccion,
+                                        cliente_telefono, cliente_codigo_postal, cliente_ciudad,
+                                        cliente_provincia)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (datos['numero'], cliente_id, datos['fecha'],
                  datos['totales']['subtotal'], datos['totales']['iva'], datos['totales']['total'],
                  nombre_cliente, nif_cliente,
                  datos['cliente'].get('direccion', ''), datos['cliente'].get('telefono', ''),
-                 datos['cliente'].get('codigo_postal', ''), datos['cliente'].get('ciudad', ''))
+                 datos['cliente'].get('codigo_postal', ''), datos['cliente'].get('ciudad', ''),
+                 datos['cliente'].get('provincia', ''))
             )
 
             if not factura_id:
-                raise Exception("No se pudo insertar la factura")
+                raise DatabaseQueryError(original_error="No se pudo insertar la factura")
 
             # 3. Insertar items, actualizar stock y validar totales
             suma_items = 0
             for item in datos['items']:
                 # Validar datos del item
                 if item['cantidad'] <= 0:
-                    raise ValueError(f"Cantidad inválida para item {item['descripcion']}: {item['cantidad']}")
+                    raise ValidationError(
+                        f"Cantidad inválida para item {item['descripcion']}: {item['cantidad']}",
+                        code="ITEM_CANTIDAD_INVALIDA"
+                    )
 
                 if item['precio'] < 0:
-                    raise ValueError(f"Precio inválido para item {item['descripcion']}: {item['precio']}")
+                    raise ValidationError(
+                        f"Precio inválido para item {item['descripcion']}: {item['precio']}",
+                        code="ITEM_PRECIO_INVALIDO"
+                    )
 
                 total_item = item['cantidad'] * item['precio']
                 suma_items += total_item
@@ -149,7 +167,7 @@ class FacturaManager:
                 )
 
                 if not item_id:
-                    raise Exception(f"No se pudo insertar item: {item['descripcion']}")
+                    raise DatabaseQueryError(original_error=f"No se pudo insertar item: {item['descripcion']}")
 
                 # Actualizar stock del producto si existe (usando ID directo)
                 if producto_id:
@@ -161,9 +179,10 @@ class FacturaManager:
 
             # Validar que la suma de items coincida con el total (con margen de 0.01 por redondeo)
             if abs(suma_items - datos['totales']['total']) > 0.01:
-                raise ValueError(
+                raise ValidationError(
                     f"Los items no coinciden con el total. "
-                    f"Suma items: {suma_items}, Total factura: {datos['totales']['total']}"
+                    f"Suma items: {suma_items}, Total factura: {datos['totales']['total']}",
+                    code="FACTURA_TOTAL_NO_COINCIDE"
                 )
 
             # 4. REGISTRAR MOVIMIENTO DE CAJA (DENTRO de la transacción)
@@ -188,7 +207,7 @@ class FacturaManager:
                     logger.info(f"Movimiento de caja registrado: Factura {datos['numero']} - {datos['totales']['total']}€")
             except sqlite3.Error as caja_error:
                 # Si falla el registro de caja, revertir TODO
-                raise Exception(f"Error registrando movimiento de caja: {caja_error}")
+                raise DatabaseQueryError(original_error=f"Error registrando movimiento de caja: {caja_error}")
 
             # 5. REGISTRAR AUDITORÍA (creación de factura)
             if usuario_id:
@@ -211,7 +230,7 @@ class FacturaManager:
             logger.info(f"Factura {datos['numero']} guardada exitosamente")
             return factura_id
 
-        except (sqlite3.Error, ValueError, Exception) as e:
+        except (sqlite3.Error, ValidationError, DatabaseQueryError, ValueError, Exception) as e:
             # REVERTIR TRANSACCIÓN - Algo falló
             self.db.rollback()
             logger.error(f"Error guardando factura (transacción revertida): {e}")
@@ -238,12 +257,12 @@ class FacturaManager:
 
     def buscar_facturas(self, filtros=None):
         """Busca facturas con filtros opcionales"""
-        # Si hay filtro de IMEI o EAN, necesitamos hacer JOIN con facturas_items
+        # Si hay filtro de IMEI o EAN, necesitamos hacer JOIN con factura_items
         if filtros and (filtros.get('imei') or filtros.get('ean')):
             query = """
                 SELECT DISTINCT f.*
                 FROM facturas f
-                LEFT JOIN facturas_items fi ON f.id = fi.factura_id
+                LEFT JOIN factura_items fi ON f.id = fi.factura_id
                 WHERE 1=1
             """
         else:
@@ -272,16 +291,61 @@ class FacturaManager:
                 params.append(f"%{filtros['numero']}%")
 
             if filtros.get('imei'):
-                query += " AND fi.imei LIKE ?"
+                query += " AND fi.imei_sn LIKE ?"
                 params.append(f"%{filtros['imei']}%")
 
             if filtros.get('ean'):
-                query += " AND fi.ean LIKE ?"
+                query += " AND fi.codigo_ean LIKE ?"
                 params.append(f"%{filtros['ean']}%")
 
         query += " ORDER BY f.fecha DESC, f.id DESC"
 
         return self.db.fetch_all(query, params if params else None)
+
+    def buscar_facturas_paginado(self, filtros=None, limit=50, offset=0):
+        """Busca facturas con paginación. Retorna (facturas, total_count)"""
+        # Construir WHERE clause
+        joins = ""
+        where_parts = []
+        params = []
+
+        if filtros and (filtros.get('imei') or filtros.get('ean')):
+            joins = " LEFT JOIN factura_items fi ON f.id = fi.factura_id"
+
+        if filtros:
+            if filtros.get('fecha_desde'):
+                where_parts.append("f.fecha >= ?")
+                params.append(filtros['fecha_desde'])
+            if filtros.get('fecha_hasta'):
+                where_parts.append("f.fecha <= ?")
+                params.append(filtros['fecha_hasta'])
+            if filtros.get('cliente'):
+                where_parts.append("f.cliente_nombre LIKE ?")
+                params.append(f"%{filtros['cliente']}%")
+            if filtros.get('numero'):
+                where_parts.append("f.numero_factura LIKE ?")
+                params.append(f"%{filtros['numero']}%")
+            if filtros.get('imei'):
+                where_parts.append("fi.imei_sn LIKE ?")
+                params.append(f"%{filtros['imei']}%")
+            if filtros.get('ean'):
+                where_parts.append("fi.codigo_ean LIKE ?")
+                params.append(f"%{filtros['ean']}%")
+
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+        distinct = "DISTINCT " if joins else ""
+
+        # Count query
+        count_query = f"SELECT COUNT({distinct}f.id) as total FROM facturas f{joins} WHERE {where_clause}"
+        count_result = self.db.fetch_one(count_query, params if params else None)
+        total = count_result['total'] if count_result else 0
+
+        # Data query with pagination
+        data_query = f"SELECT {distinct}f.* FROM facturas f{joins} WHERE {where_clause} ORDER BY f.fecha DESC, f.id DESC LIMIT ? OFFSET ?"
+        data_params = (params + [limit, offset]) if params else [limit, offset]
+        facturas = self.db.fetch_all(data_query, data_params)
+
+        return facturas, total
 
     def eliminar_factura(self, factura_id, restaurar_stock=True, usuario_id=None):
         """
@@ -393,6 +457,7 @@ class FacturaManager:
                 'direccion': factura.get('cliente_direccion', ''),
                 'codigo_postal': factura.get('cliente_cp', ''),
                 'ciudad': factura.get('cliente_ciudad', ''),
+                'provincia': factura.get('cliente_provincia', ''),
                 'telefono': factura.get('cliente_telefono', ''),
                 'email': factura.get('cliente_email', '')
             }
@@ -404,7 +469,7 @@ class FacturaManager:
                     'descripcion': item.get('descripcion', ''),
                     'imei_sn': item.get('imei_sn', ''),
                     'cantidad': item.get('cantidad', 1),
-                    'precio': item.get('precio', 0.0)
+                    'precio': item.get('precio_unitario', item.get('precio', 0.0))
                 })
 
             # Preparar totales
@@ -432,4 +497,77 @@ class FacturaManager:
 
         except sqlite3.Error as e:
             logger.error(f"Error generando PDF desde BD: {e}", exc_info=True)
+            return None
+
+    def generar_garantia_desde_bd(self, factura_id):
+        """
+        Genera el PDF de garantía de una factura desde los datos de la BD.
+
+        Returns:
+            str: Ruta del PDF generado, o None si hay error
+        """
+        try:
+            factura = self.obtener_factura(factura_id)
+            if not factura:
+                return None
+
+            from datetime import datetime
+
+            if isinstance(factura['fecha'], str):
+                try:
+                    fecha = datetime.strptime(factura['fecha'], '%Y-%m-%d')
+                except (ValueError, TypeError):
+                    fecha = datetime.now()
+            else:
+                fecha = factura['fecha']
+
+            cliente_data = {
+                'nombre': factura.get('cliente_nombre', 'Cliente sin nombre'),
+                'nif': factura.get('cliente_nif', ''),
+                'direccion': factura.get('cliente_direccion', ''),
+                'codigo_postal': factura.get('cliente_cp', ''),
+                'ciudad': factura.get('cliente_ciudad', ''),
+                'provincia': factura.get('cliente_provincia', ''),
+                'telefono': factura.get('cliente_telefono', ''),
+            }
+
+            items_data = []
+            for item in factura.get('items', []):
+                # Obtener estado del producto desde la BD
+                estado = None
+                producto_id = item.get('producto_id')
+                if producto_id:
+                    row = self.db.fetch_one(
+                        "SELECT estado FROM productos WHERE id = ?", (producto_id,)
+                    )
+                    if row:
+                        estado = row.get('estado')
+                items_data.append({
+                    'descripcion': item.get('descripcion', ''),
+                    'imei': item.get('imei_sn', ''),
+                    'cantidad': item.get('cantidad', 1),
+                    'precio': item.get('precio_unitario', item.get('precio', 0.0)),
+                    'estado': estado,
+                })
+
+            totales_data = {
+                'subtotal': factura.get('subtotal', 0.0),
+                'iva': factura.get('iva', 0.0),
+                'total': factura.get('total', 0.0),
+            }
+
+            datos_pdf = {
+                'numero': factura['numero_factura'],
+                'fecha': fecha,
+                'cliente': cliente_data,
+                'items': items_data,
+                'totales': totales_data,
+            }
+
+            from app.modules.pdf_generator import PDFGenerator
+            pdf_gen = PDFGenerator(self.db)
+            return pdf_gen.generar_garantia(datos_pdf, factura_id)
+
+        except sqlite3.Error as e:
+            logger.error(f"Error generando garantía desde BD: {e}", exc_info=True)
             return None

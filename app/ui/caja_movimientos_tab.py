@@ -3,16 +3,20 @@ Pestaña para gestión de movimientos de caja
 """
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QTableWidget, QTableWidgetItem, QGroupBox,
-                             QDateEdit, QMessageBox, QHeaderView, QRadioButton,
+                             QDateEdit, QHeaderView, QRadioButton,
                              QComboBox, QTextEdit, QDoubleSpinBox, QButtonGroup, QFileDialog,
                              QScrollArea)
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QColor, QFont
+from app.utils.notify import notify_success, notify_error, notify_warning, ask_confirm
 from app.i18n import tr
 from app.db.database import Database
 from app.modules.caja_manager import CajaManager
+from app.ui.widgets.pagination_widget import PaginationWidget
 from config import CASH_INCOME_CATEGORIES, CASH_EXPENSE_CATEGORIES, EXPENSE_TYPES
 from app.utils.logger import logger
+from app.ui.transparent_buttons import apply_btn_success, apply_btn_danger, apply_btn_cancel, apply_btn_primary, set_btn_icon
+from qfluentwidgets import FluentIcon
 
 
 class CajaMovimientosTab(QWidget):
@@ -43,7 +47,7 @@ class CajaMovimientosTab(QWidget):
 
         # Saldo actual - Grande y prominente
         saldo_group = QGroupBox()
-        saldo_group.setStyleSheet("QGroupBox { border: 2px solid #3498db; border-radius: 5px; padding: 15px; }")
+        saldo_group.setStyleSheet("QGroupBox { border: 2px solid #5E81AC; border-radius: 5px; padding: 15px; }")
         saldo_layout = QVBoxLayout()
 
         saldo_titulo = QLabel(tr("SALDO ACTUAL EN CAJA"))
@@ -52,13 +56,13 @@ class CajaMovimientosTab(QWidget):
         saldo_layout.addWidget(saldo_titulo)
 
         self.saldo_label = QLabel("0.00 €")
-        self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #27ae60; padding: 10px;")
+        self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #A3BE8C; padding: 10px;")
         self.saldo_label.setAlignment(Qt.AlignCenter)
         saldo_layout.addWidget(self.saldo_label)
 
         # Saldo inicial del día (para evitar confusión)
         self.saldo_inicial_label = QLabel(tr("Saldo inicial del día") + ": 0.00 €")
-        self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #888; padding: 5px;")
+        self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #7B88A0; padding: 5px;")
         self.saldo_inicial_label.setAlignment(Qt.AlignCenter)
         saldo_layout.addWidget(self.saldo_inicial_label)
 
@@ -68,12 +72,12 @@ class CajaMovimientosTab(QWidget):
 
         self.btn_abrir_caja = QPushButton("🔓 " + tr("Abrir Caja"))
         self.btn_abrir_caja.clicked.connect(self.abrir_caja)
-        self.btn_abrir_caja.setStyleSheet("background-color: transparent; color: #27ae60; border: 2px solid #27ae60; border-radius: 6px; padding: 8px 20px; font-weight: bold;")
+        apply_btn_success(self.btn_abrir_caja)
         botones_caja_layout.addWidget(self.btn_abrir_caja)
 
-        self.btn_cerrar_caja = QPushButton("🔒 " + tr("Cerrar Caja"))
+        self.btn_cerrar_caja = QPushButton(tr("Cerrar Caja"))
         self.btn_cerrar_caja.clicked.connect(self.cerrar_caja)
-        self.btn_cerrar_caja.setStyleSheet("background-color: transparent; color: #e74c3c; border: 2px solid #e74c3c; border-radius: 6px; padding: 8px 20px; font-weight: bold;")
+        apply_btn_danger(self.btn_cerrar_caja)
         botones_caja_layout.addWidget(self.btn_cerrar_caja)
 
         botones_caja_layout.addStretch()
@@ -89,7 +93,7 @@ class CajaMovimientosTab(QWidget):
 
         # Info: Los ingresos se registran automáticamente
         info_ingresos = QLabel("ℹ️ " + tr("Los ingresos se registran automáticamente desde TPV, Ventas y SAT"))
-        info_ingresos.setStyleSheet("color: #95a5a6; font-size: 11px; font-style: italic; padding: 5px;")
+        info_ingresos.setStyleSheet("color: #D8DEE9; font-size: 11px; font-style: italic; padding: 5px;")
         form_layout.addWidget(info_ingresos)
 
         # Selector de tipo de egreso (siempre visible)
@@ -120,7 +124,7 @@ class CajaMovimientosTab(QWidget):
 
         # Info label para aclarar
         info_metodo = QLabel("ℹ️ " + tr("Solo EFECTIVO afecta el saldo de caja"))
-        info_metodo.setStyleSheet("color: #95a5a6; font-size: 11px; font-style: italic;")
+        info_metodo.setStyleSheet("color: #D8DEE9; font-size: 11px; font-style: italic;")
         metodo_pago_layout.addWidget(info_metodo)
 
         metodo_pago_layout.addStretch()
@@ -159,7 +163,7 @@ class CajaMovimientosTab(QWidget):
         self.fecha_input.setMinimumWidth(150)
         fecha_layout.addWidget(self.fecha_input)
         fecha_info = QLabel("ℹ️ " + tr("Puede registrar movimientos pasados"))
-        fecha_info.setStyleSheet("color: #999; font-size: 11px;")
+        fecha_info.setStyleSheet("color: #7B88A0; font-size: 11px;")
         fecha_layout.addWidget(fecha_info)
         fecha_layout.addStretch()
         form_layout.addLayout(fecha_layout)
@@ -177,7 +181,7 @@ class CajaMovimientosTab(QWidget):
 
         btn_guardar = QPushButton("💾 " + tr("Registrar Egreso"))
         btn_guardar.clicked.connect(self.guardar_movimiento)
-        btn_guardar.setStyleSheet("background-color: transparent; color: #BF616A; border: 2px solid #BF616A; border-radius: 6px; font-weight: bold; padding: 10px 30px; font-size: 14px;")
+        apply_btn_danger(btn_guardar)
         btn_layout.addWidget(btn_guardar)
 
         form_layout.addLayout(btn_layout)
@@ -215,13 +219,15 @@ class CajaMovimientosTab(QWidget):
 
         self.btn_buscar = QPushButton(tr("Buscar"))
         self.btn_buscar.clicked.connect(self.cargar_movimientos)
-        self.btn_buscar.setStyleSheet("background-color: transparent; color: #5E81AC; border: 2px solid #5E81AC; border-radius: 6px; padding: 8px 16px;")
+        apply_btn_primary(self.btn_buscar)
+        set_btn_icon(self.btn_buscar, FluentIcon.SEARCH, color="#5E81AC")
         self.btn_buscar.setMinimumHeight(35)
         filtros_layout.addWidget(self.btn_buscar)
 
-        btn_exportar_csv = QPushButton("📊 " + tr("Exportar CSV"))
+        btn_exportar_csv = QPushButton(tr("Exportar CSV"))
         btn_exportar_csv.clicked.connect(self.exportar_csv)
-        btn_exportar_csv.setStyleSheet("background-color: transparent; color: #A3BE8C; border: 2px solid #A3BE8C; border-radius: 6px;")
+        apply_btn_success(btn_exportar_csv)
+        set_btn_icon(btn_exportar_csv, FluentIcon.DOWNLOAD, color="#A3BE8C")
         filtros_layout.addWidget(btn_exportar_csv)
 
         filtros_layout.addStretch()
@@ -260,6 +266,11 @@ class CajaMovimientosTab(QWidget):
 
         layout.addWidget(self.tabla)
 
+        # Paginación
+        self.pagination = PaginationWidget()
+        self.pagination.page_changed.connect(self._on_page_changed)
+        layout.addWidget(self.pagination)
+
         # Finalizar scroll area
         self.scroll.setWidget(content_widget)
         main_layout.addWidget(self.scroll)
@@ -271,9 +282,9 @@ class CajaMovimientosTab(QWidget):
 
         # Cambiar color según el saldo
         if saldo < 0:
-            self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #e74c3c; padding: 10px;")
+            self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #BF616A; padding: 10px;")
         else:
-            self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #27ae60; padding: 10px;")
+            self.saldo_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #A3BE8C; padding: 10px;")
 
         # Mostrar saldo inicial del día (solo de la apertura oficial)
         from PyQt5.QtCore import QDate
@@ -288,7 +299,7 @@ class CajaMovimientosTab(QWidget):
         if apertura_hoy:
             # Hay apertura oficial de hoy
             self.saldo_inicial_label.setText(f"{tr('Saldo inicial del día')}: {apertura_hoy['saldo_inicial']:.2f} €")
-            self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #888; padding: 5px;")
+            self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #7B88A0; padding: 5px;")
         else:
             # Verificar si hay cierre pendiente de días anteriores
             estado_caja, data = self.caja_manager.verificar_estado_caja_completo(fecha_hoy)
@@ -296,24 +307,24 @@ class CajaMovimientosTab(QWidget):
             if estado_caja == 'cierre_pendiente':
                 fecha_pendiente = data['fecha'] if data else 'anterior'
                 self.saldo_inicial_label.setText(f"⚠️ {tr('Cierre pendiente del día')} {fecha_pendiente}")
-                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #e67e22; padding: 5px; font-weight: bold;")
+                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #D08770; padding: 5px; font-weight: bold;")
             elif estado_caja in ['apertura_requerida', 'apertura_nueva_dia']:
                 self.saldo_inicial_label.setText(f"📋 {tr('Apertura de caja pendiente')}")
-                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #3498db; padding: 5px; font-weight: bold;")
+                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #5E81AC; padding: 5px; font-weight: bold;")
             else:
                 # Estado OK pero sin apertura formal (primera vez o situación rara)
                 totales = self.caja_manager.calcular_totales_dia(fecha_hoy)
                 self.saldo_inicial_label.setText(f"{tr('Saldo inicial del día')}: {totales['saldo_inicial']:.2f} €")
-                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #888; padding: 5px;")
+                self.saldo_inicial_label.setStyleSheet("font-size: 12px; color: #7B88A0; padding: 5px;")
 
     def guardar_movimiento(self):
         """Guarda un nuevo egreso en caja"""
         if not self.concepto_input.text().strip():
-            QMessageBox.warning(self, tr("Error"), tr("Debe ingresar un concepto/motivo"))
+            notify_warning(self, tr("Error"), tr("Debe ingresar un concepto/motivo"))
             return
 
         if self.monto_input.value() <= 0:
-            QMessageBox.warning(self, tr("Error"), tr("El monto debe ser mayor a 0"))
+            notify_warning(self, tr("Error"), tr("El monto debe ser mayor a 0"))
             return
 
         # Generar categoría basada en el tipo de egreso
@@ -335,26 +346,19 @@ class CajaMovimientosTab(QWidget):
             nuevo_saldo = saldo_actual - datos['monto']
 
             if nuevo_saldo < 0:
-                respuesta = QMessageBox.warning(
-                    self,
-                    tr("Saldo Negativo"),
+                if not ask_confirm(self, tr("Saldo Negativo"),
                     f"⚠️ {tr('ADVERTENCIA')}: {tr('Esta operación dejará el saldo de caja NEGATIVO')}\n\n"
                     f"{tr('Saldo actual')}: {saldo_actual:.2f} €\n"
                     f"{tr('Egreso')}: {datos['monto']:.2f} €\n"
                     f"{tr('Saldo Resultante')}: {nuevo_saldo:.2f} €\n\n"
-                    f"{tr('¿Está seguro de continuar?')}",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No  # Default a No
-                )
-
-                if respuesta == QMessageBox.No:
+                    f"{tr('¿Está seguro de continuar?')}"):
                     return  # Cancelar operación
 
         try:
             movimiento_id = self.caja_manager.registrar_movimiento(datos)
 
             if movimiento_id:
-                QMessageBox.information(
+                notify_success(
                     self,
                     tr("Éxito"),
                     tr("Movimiento registrado correctamente") + "\n\n"
@@ -366,12 +370,16 @@ class CajaMovimientosTab(QWidget):
                 self.actualizar_saldo()
                 self.cargar_movimientos()
             else:
-                QMessageBox.critical(self, tr("Error"), tr("No se pudo registrar el movimiento"))
+                notify_error(self, tr("Error"), tr("No se pudo registrar el movimiento"))
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(self, tr("Error"), tr("Error al guardar") + f":\n{str(e)}")
+            notify_error(self, tr("Error"), tr("Error al guardar") + f":\n{str(e)}")
+
+    def _on_page_changed(self, offset, limit):
+        """Callback cuando cambia la página"""
+        self.cargar_movimientos()
 
     def cargar_movimientos(self):
-        """Carga los movimientos en la tabla"""
+        """Carga los movimientos con paginación"""
         filtros = {}
 
         tipo = self.filtro_tipo_combo.currentData()
@@ -383,7 +391,10 @@ class CajaMovimientosTab(QWidget):
 
         logger.debug(f"Filtros aplicados: {filtros}")
 
-        movimientos = self.caja_manager.obtener_movimientos(filtros)
+        movimientos, total = self.caja_manager.obtener_movimientos_paginado(
+            filtros, limit=self.pagination.limit, offset=self.pagination.offset
+        )
+        self.pagination.update_total(total)
         logger.debug(f"Movimientos encontrados: {len(movimientos)}")
 
         self.tabla.setRowCount(0)
@@ -401,9 +412,9 @@ class CajaMovimientosTab(QWidget):
             # Tipo con color
             tipo_item = QTableWidgetItem(mov['tipo'].upper())
             if mov['tipo'] == 'ingreso':
-                tipo_item.setForeground(QColor('#27ae60'))
+                tipo_item.setForeground(QColor('#A3BE8C'))
             else:
-                tipo_item.setForeground(QColor('#e74c3c'))
+                tipo_item.setForeground(QColor('#BF616A'))
             tipo_item.setTextAlignment(Qt.AlignCenter)
             tipo_item.setFont(QFont("", -1, QFont.Bold))
             self.tabla.setItem(row, 1, tipo_item)
@@ -432,9 +443,9 @@ class CajaMovimientosTab(QWidget):
             # Monto con color
             monto_item = QTableWidgetItem(f"{float(mov['monto']):.2f} €")
             if mov['tipo'] == 'ingreso':
-                monto_item.setForeground(QColor('#27ae60'))
+                monto_item.setForeground(QColor('#A3BE8C'))
             else:
-                monto_item.setForeground(QColor('#e74c3c'))
+                monto_item.setForeground(QColor('#BF616A'))
             monto_item.setTextAlignment(Qt.AlignCenter)
             self.tabla.setItem(row, 5, monto_item)
 
@@ -457,7 +468,7 @@ class CajaMovimientosTab(QWidget):
         from datetime import datetime
 
         if self.tabla.rowCount() == 0:
-            QMessageBox.warning(self, tr("Sin datos"), tr("No hay movimientos para exportar"))
+            notify_warning(self, tr("Sin datos"), tr("No hay movimientos para exportar"))
             return
 
         # Diálogo para elegir ubicación
@@ -508,7 +519,7 @@ class CajaMovimientosTab(QWidget):
                         mov.get('notas', '')
                     ])
 
-            QMessageBox.information(
+            notify_success(
                 self,
                 tr("Exportado"),
                 tr("Movimientos exportados exitosamente a") + f":\n{ruta}\n\n"
@@ -516,7 +527,7 @@ class CajaMovimientosTab(QWidget):
             )
 
         except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.critical(
+            notify_error(
                 self,
                 tr("Error al exportar"),
                 tr("No se pudo exportar el archivo") + f":\n{str(e)}"
@@ -539,7 +550,7 @@ class CajaMovimientosTab(QWidget):
 
         # Verificar permisos y pedir contraseña (OBLIGATORIO)
         if not self.auth_manager:
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Error de Seguridad"),
                 tr("No se puede verificar permisos.") + "\n" +
@@ -563,7 +574,7 @@ class CajaMovimientosTab(QWidget):
 
         # Verificar si ya existe apertura para hoy
         if self.caja_manager.verificar_apertura_existente(fecha_hoy):
-            QMessageBox.information(
+            notify_success(
                 self,
                 tr("Caja Ya Abierta"),
                 tr("La caja de hoy ya está abierta.")
@@ -573,7 +584,7 @@ class CajaMovimientosTab(QWidget):
         # Verificar si hay cierre pendiente de día anterior
         apertura_pendiente = self.caja_manager.obtener_apertura_sin_cierre()
         if apertura_pendiente and apertura_pendiente['fecha'] != fecha_hoy:
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Cierre Pendiente"),
                 tr("Antes de abrir la caja de hoy, debe cerrar la caja del día") + f" {apertura_pendiente['fecha']}.\n\n" +
@@ -612,12 +623,12 @@ class CajaMovimientosTab(QWidget):
         btn_layout = QHBoxLayout()
         btn_cancelar = QPushButton(tr("Cancelar"))
         btn_cancelar.clicked.connect(dialog.reject)
-        btn_cancelar.setStyleSheet("background-color: transparent; color: #e74c3c; border: 2px solid #e74c3c; border-radius: 6px; padding: 8px 20px;")
+        apply_btn_cancel(btn_cancelar)
         btn_layout.addWidget(btn_cancelar)
 
         btn_abrir = QPushButton(tr("Abrir Caja"))
         btn_abrir.clicked.connect(dialog.accept)
-        btn_abrir.setStyleSheet("background-color: transparent; color: #27ae60; border: 2px solid #27ae60; border-radius: 6px; padding: 8px 20px; font-weight: bold;")
+        apply_btn_success(btn_abrir)
         btn_layout.addWidget(btn_abrir)
         layout.addLayout(btn_layout)
 
@@ -631,7 +642,7 @@ class CajaMovimientosTab(QWidget):
             apertura_id = self.caja_manager.registrar_apertura(datos_apertura)
 
             if apertura_id:
-                QMessageBox.information(
+                notify_success(
                     self,
                     tr("Caja Abierta"),
                     tr("La caja de hoy ha sido abierta correctamente.") + "\n\n" +
@@ -639,7 +650,7 @@ class CajaMovimientosTab(QWidget):
                 )
                 self.actualizar_saldo()
             else:
-                QMessageBox.critical(self, tr("Error"), tr("No se pudo abrir la caja"))
+                notify_error(self, tr("Error"), tr("No se pudo abrir la caja"))
 
     def cerrar_caja(self):
         """Cierra la caja - detecta automáticamente qué día cerrar"""
@@ -648,7 +659,7 @@ class CajaMovimientosTab(QWidget):
 
         # Verificar permisos y pedir contraseña (OBLIGATORIO)
         if not self.auth_manager:
-            QMessageBox.warning(
+            notify_warning(
                 self,
                 tr("Error de Seguridad"),
                 tr("No se puede verificar permisos.") + "\n" +
@@ -674,7 +685,7 @@ class CajaMovimientosTab(QWidget):
         apertura_pendiente = self.caja_manager.obtener_apertura_sin_cierre()
 
         if not apertura_pendiente:
-            QMessageBox.information(
+            notify_success(
                 self,
                 tr("Sin Caja Abierta"),
                 tr("No hay ninguna caja abierta para cerrar.")
@@ -685,7 +696,7 @@ class CajaMovimientosTab(QWidget):
 
         # Verificar si ya existe cierre para esa fecha
         if self.caja_manager.verificar_cierre_existente(fecha_cierre):
-            QMessageBox.information(
+            notify_success(
                 self,
                 tr("Ya Cerrada"),
                 tr("La caja del día") + f" {fecha_cierre} " + tr("ya está cerrada.")
@@ -705,18 +716,18 @@ class CajaMovimientosTab(QWidget):
         # Info del día
         if fecha_cierre != fecha_hoy:
             aviso = QLabel(f"⚠️ {tr('Cerrando caja de día ANTERIOR')}: {fecha_cierre}")
-            aviso.setStyleSheet("color: #f39c12; font-weight: bold; padding: 10px;")
+            aviso.setStyleSheet("color: #EBCB8B; font-weight: bold; padding: 10px;")
             layout.addWidget(aviso)
 
         # Resumen
         resumen = QLabel(
             f"<b>{tr('Resumen del día')} {fecha_cierre}:</b><br><br>"
             f"{tr('Saldo Inicial')}: {totales['saldo_inicial']:.2f} €<br>"
-            f"{tr('Total Ingresos')}: <span style='color:#27ae60'>+{totales['total_ingresos']:.2f} €</span><br>"
-            f"{tr('Total Egresos')}: <span style='color:#e74c3c'>-{totales['total_egresos']:.2f} €</span><br>"
+            f"{tr('Total Ingresos')}: <span style='color:#A3BE8C'>+{totales['total_ingresos']:.2f} €</span><br>"
+            f"{tr('Total Egresos')}: <span style='color:#BF616A'>-{totales['total_egresos']:.2f} €</span><br>"
             f"<br><b>{tr('Saldo Esperado')}: {totales['saldo_esperado']:.2f} €</b>"
         )
-        resumen.setStyleSheet("background-color: #252526; padding: 15px; border-radius: 5px;")
+        resumen.setStyleSheet("background-color: #2E3440; padding: 15px; border-radius: 5px;")
         layout.addWidget(resumen)
 
         # Efectivo contado
@@ -744,12 +755,12 @@ class CajaMovimientosTab(QWidget):
         btn_layout = QHBoxLayout()
         btn_cancelar = QPushButton(tr("Cancelar"))
         btn_cancelar.clicked.connect(dialog.reject)
-        btn_cancelar.setStyleSheet("background-color: transparent; color: #888; border: 2px solid #888; border-radius: 6px; padding: 8px 20px;")
+        apply_btn_cancel(btn_cancelar)
         btn_layout.addWidget(btn_cancelar)
 
         btn_cerrar = QPushButton(tr("Realizar Cierre"))
         btn_cerrar.clicked.connect(dialog.accept)
-        btn_cerrar.setStyleSheet("background-color: transparent; color: #e74c3c; border: 2px solid #e74c3c; border-radius: 6px; padding: 8px 20px; font-weight: bold;")
+        apply_btn_danger(btn_cerrar)
         btn_layout.addWidget(btn_cerrar)
         layout.addLayout(btn_layout)
 
@@ -759,14 +770,8 @@ class CajaMovimientosTab(QWidget):
 
             # Confirmar si hay diferencia
             if abs(diferencia) > 0.01:
-                respuesta = QMessageBox.question(
-                    self,
-                    tr("Confirmar Diferencia"),
-                    tr("Hay una diferencia de") + f" {diferencia:+.2f} €\n\n" +
-                    tr("¿Desea continuar con el cierre?"),
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if respuesta != QMessageBox.Yes:
+                if not ask_confirm(self, tr("Confirmar Diferencia"), tr("Hay una diferencia de") + f" {diferencia:+.2f} €\n\n" +
+                    tr("¿Desea continuar con el cierre?")):
                     return
 
 
@@ -788,23 +793,28 @@ class CajaMovimientosTab(QWidget):
             cierre_id = self.caja_manager.realizar_cierre(datos_cierre)
 
             if cierre_id:
-                QMessageBox.information(
-                    self,
-                    tr("Caja Cerrada"),
+                mensaje = (
                     tr("Cierre de caja realizado correctamente.") + "\n\n" +
                     tr("Fecha") + f": {fecha_cierre}\n" +
                     tr("Efectivo Contado") + f": {efectivo_contado:.2f} €\n" +
                     tr("Diferencia") + f": {diferencia:+.2f} €"
                 )
 
+                # Si cerró un día anterior, añadir aviso en el mismo mensaje
+                if fecha_cierre != fecha_hoy:
+                    if not self.caja_manager.verificar_apertura_existente(fecha_hoy):
+                        mensaje += (
+                            "\n\n" + tr("Ha cerrado la caja de un día anterior.") +
+                            "\n" + tr("Ahora puede abrir la caja de hoy usando el botón") +
+                            " 🔓 " + tr("Abrir Caja")
+                        )
+
+                notify_success(self, tr("Caja Cerrada"), mensaje)
+
                 self.actualizar_saldo()
                 self.cargar_movimientos()
-
-                # Si cerró un día anterior, ofrecer abrir hoy
-                if fecha_cierre != fecha_hoy:
-                    self._ofrecer_apertura_hoy(efectivo_contado)
             else:
-                QMessageBox.critical(self, tr("Error"), tr("No se pudo realizar el cierre"))
+                notify_error(self, tr("Error"), tr("No se pudo realizar el cierre"))
 
     def _ofrecer_apertura_hoy(self, saldo_sugerido):
         """Notifica al usuario que puede abrir la caja de hoy"""
@@ -816,7 +826,7 @@ class CajaMovimientosTab(QWidget):
             return
 
         # Solo notificación - el usuario usará el botón Abrir Caja
-        QMessageBox.information(
+        notify_success(
             self,
             tr("Apertura de Caja"),
             tr("Ha cerrado la caja de un día anterior.") + "\n\n" +

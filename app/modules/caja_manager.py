@@ -275,6 +275,41 @@ class CajaManager:
 
         return self.db.fetch_all(query, params if params else None)
 
+    def obtener_movimientos_paginado(self, filtros=None, limit=50, offset=0):
+        """Obtiene movimientos con paginación. Retorna (movimientos, total_count)"""
+        where_parts = []
+        params = []
+
+        if filtros:
+            if filtros.get('tipo'):
+                where_parts.append("tipo = ?")
+                params.append(filtros['tipo'])
+            if filtros.get('fecha_desde'):
+                where_parts.append("fecha >= ?")
+                params.append(filtros['fecha_desde'])
+            if filtros.get('fecha_hasta'):
+                where_parts.append("fecha <= ?")
+                params.append(filtros['fecha_hasta'])
+            if filtros.get('categoria'):
+                where_parts.append("categoria = ?")
+                params.append(filtros['categoria'])
+
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_result = self.db.fetch_one(
+            f"SELECT COUNT(*) as total FROM caja_movimientos WHERE {where_clause}",
+            params if params else None
+        )
+        total = count_result['total'] if count_result else 0
+
+        data_params = (params + [limit, offset]) if params else [limit, offset]
+        movimientos = self.db.fetch_all(
+            f"SELECT * FROM caja_movimientos WHERE {where_clause} ORDER BY fecha DESC, id DESC LIMIT ? OFFSET ?",
+            data_params
+        )
+
+        return movimientos, total
+
     def calcular_totales_dia(self, fecha):
         """Calcula los totales de ingresos y egresos EN EFECTIVO para un día específico
 

@@ -4,6 +4,7 @@ import qtawesome as qta
 from PyQt5.QtGui import QPalette, QColor
 from PyQt5.QtCore import QSize
 from PyQt5.QtWidgets import QApplication
+from qfluentwidgets import setTheme, Theme as FluentTheme
 from app.utils.logger import logger
 
 # DEBUG: Confirmar que este archivo se está cargando
@@ -59,8 +60,8 @@ INFO_COLOR = NORD8
 INFO_HOVER = NORD7
 INFO_TEXT = "#2E3440"
 
-# Altura estándar global para inputs y botones
-COMMON_HEIGHT = "42px"
+# Altura estándar global para inputs y botones - Modernizada para toque fácil y amplitud
+COMMON_HEIGHT = "44px"
 
 # Definición de Temas
 THEMES = {
@@ -147,7 +148,10 @@ def apply_theme(app: QApplication, theme_name: str = "dark"):
     palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(theme["text_disabled"]))
 
     app.setPalette(palette)
-    app.setStyle("Fusion") 
+    app.setStyle("Fusion")
+
+    # Sincronizar tema de qfluentwidgets (para NavigationInterface, InfoBar, etc.)
+    setTheme(FluentTheme.DARK if theme_name == "dark" else FluentTheme.LIGHT)
 
     # 2. Generar Stylesheet Global
     stylesheet = _generate_stylesheet(theme)
@@ -163,8 +167,8 @@ def _generate_stylesheet(t):
     QWidget {{
         background-color: {t["bg_main"]};
         color: {t["text_main"]};
-        font-family: "Segoe UI", sans-serif;
-        font-size: 14px; /* Un poco más grande para legibilidad */
+        font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+        font-size: 15px; /* Ligeramente más grande para legibilidad óptima */
     }}
 
     /* ===== HEADER ===== */
@@ -228,8 +232,8 @@ def _generate_stylesheet(t):
     QPushButton#navButton:hover {{
         background-color: {t["bg_tertiary"]};
         color: {t["text_main"]};
-        border: 2px solid {t["border"]};
-        padding: 12px 18px;
+        border-radius: 12px;
+        padding: 14px 20px;
     }}
     
     QPushButton#navButton:checked {{
@@ -245,6 +249,33 @@ def _generate_stylesheet(t):
     QFrame#panel {{
         background-color: {t["bg_secondary"]};
         border-right: 1px solid {t["border"]};
+    }}
+    
+    /* ===== CARD UI ===== */
+    QFrame#cardPanel, QWidget#cardPanel {{
+        background-color: {t["bg_secondary"]};
+        border: 1px solid {t["border"]};
+        border-radius: 12px;
+    }}
+    
+    QGroupBox#cardGroup {{
+        background-color: {t["bg_secondary"]};
+        border: 1px solid {t["border"]};
+        border-radius: 12px;
+        margin-top: 24px;
+        padding: 24px 16px 16px 16px;
+    }}
+    
+    QGroupBox#cardGroup::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        left: 16px;
+        top: 2px;
+        padding: 4px 12px;
+        background-color: {t["bg_secondary"]};
+        color: {PRIMARY_COLOR};
+        border-radius: 4px;
+        border: 1px solid {t["border"]};
     }}
     
     QFrame[frameShape="4"], QFrame[frameShape="5"] {{ /* Lines */
@@ -286,17 +317,18 @@ def _generate_stylesheet(t):
     QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit, QComboBox {{
         background-color: {t["bg_input"]};
         border: 1px solid {t["border"]};
-        border-radius: 6px;
-        padding: 0 12px; /* Padding horizontal */
+        border-radius: 8px; /* Más redondo, estilo Windows 11 / Mac */
+        padding: 4px 14px; /* Más padding horizontal y vertical */
         color: {t["text_main"]};
         selection-background-color: {t["bg_selected"]};
         selection-color: {t["text_main"]};
-        min-height: {COMMON_HEIGHT}; /* ALTURA ESTÁNDAR 42px */
+        min-height: {COMMON_HEIGHT};
     }}
 
-    QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
-        border: 2px solid {t["border_focus"]};
-        padding: 0 11px; /* Ajuste por borde */
+    QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {{
+        border: 2px solid {t["border_focus"]}; /* Borde llamativo de acción primaria */
+        background-color: {t["bg_main"]}; /* Ligero contraste o elevación al tener foco */
+        padding: 3px 13px; /* Compensación del borde para no cambiar tamaño */
     }}
     
     QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QLineEdit[readOnly="true"] {{
@@ -305,76 +337,106 @@ def _generate_stylesheet(t):
         border-color: {t["border"]};
     }}
 
-    /* ===== DROPDOWNS ===== */
-    QComboBox::drop-down {{
-        border: none;
-        width: 30px;
+    /* ===== DROPDOWNS: Sin estilos custom, usan la flecha nativa del sistema (igual que QDateEdit) ===== */
+
+    /* Popup del ComboBox */
+    QComboBox QAbstractItemView {{
+        background-color: {t["bg_secondary"]};
+        border: 1px solid {t["border_focus"]};
+        border-radius: 8px;
+        color: {t["text_main"]};
+        selection-background-color: {t["border_focus"]};
+        selection-color: {PRIMARY_TEXT};
+        padding: 4px;
+        outline: none;
     }}
     
-    QComboBox::down-arrow {{
-        image: none;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 6px solid {t["text_secondary"]};
-        margin-right: 10px;
+    QComboBox QAbstractItemView::item {{
+        padding: 8px 14px;
+        min-height: 32px;
+        border-radius: 4px;
+    }}
+    
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: rgba(136, 192, 208, 0.15);
     }}
 
     /* ===== BOTONES (GLOBAL DEFAULT) ===== */
-    /* Botones primarios con borde turquesa */
+    /* Botones primarios (SÓLIDOS) */
     QPushButton {{
         min-height: {COMMON_HEIGHT};
-        border-radius: 6px;
-        padding: 0 16px;
+        border-radius: 8px;
+        padding: 0 24px; /* Botones un poco más anchos por defecto */
         font-weight: 600;
-        background-color: transparent;
-        color: {NORD8}; /* Texto turquesa */
-        border: 2px solid {NORD8}; /* Borde turquesa */
+        background-color: {PRIMARY_COLOR}; /* FONDO SÓLIDO */
+        color: {PRIMARY_TEXT}; /* TEXTO BLANCO */
+        border: none;
+        font-size: 14px;
     }}
     
     QPushButton:hover {{
-        background-color: rgba(136, 192, 208, 0.1); /* Fondo turquesa suave al hover */
-        border: 2px solid {NORD8};
+        background-color: {PRIMARY_HOVER}; /* Variación sólida para Hover */
     }}
     
     QPushButton:pressed {{
-        background-color: rgba(136, 192, 208, 0.2);
+        background-color: {PRIMARY_PRESSED}; /* Variación sólida para Pressed */
+        padding-top: 2px; /* Pequeño efecto 3D al pulsar */
     }}
     
     /* Botones de cancelar - sin fondo, marco gris */
+    /* Botones de cancelar / neutros - Outline sutil */
     QPushButton[objectName="cancelButton"],
     QPushButton[text="Cancelar"],
     QPushButton[text="Cancel"] {{
         background-color: transparent;
-        color: {t["text_secondary"]};
-        border: 2px solid #5E6B7D; /* Gris más claro que border normal */
+        color: {t["text_main"]};
+        border: 1px solid {t["border"]}; /* Borde más fino para ser secundario */
     }}
     
     QPushButton[objectName="cancelButton"]:hover,
     QPushButton[text="Cancelar"]:hover,
     QPushButton[text="Cancel"]:hover {{
-        background-color: rgba(94, 107, 125, 0.1);
+        background-color: {t["bg_tertiary"]};
         color: {t["text_main"]};
-        border: 2px solid #6E7B8D;
+        border: 1px solid {t["border_focus"]};
     }}
     
     /* ===== TABLAS ===== */
     QTableWidget, QTableView {{
-        background-color: {t["bg_input"]};
-        alternate-background-color: {t["bg_secondary"]};
-        gridline-color: {t["border"]};
+        background-color: {t["bg_main"]}; /* Fondo tabla igual al cuerpo para diseño limpio */
+        alternate-background-color: {t["bg_input"]};
+        gridline-color: transparent; /* Quitamos gridlines fuertes, diseño más abierto */
         border: 1px solid {t["border"]};
-        border-radius: 6px;
+        border-radius: 8px;
+        selection-background-color: {t["border_focus"]}; /* Foco azul claro/fuerte */
+        selection-color: {PRIMARY_TEXT};
+        outline: none;
+    }}
+
+    QTableWidget::item, QTableView::item {{
+        padding: 10px 14px; /* Mayor padding vertical en celdas de tabla */
+        border-bottom: 1px solid {t["bg_secondary"]}; /* Sutil línea separadora base */
+    }}
+
+    QTableWidget::item:hover, QTableView::item:hover {{
+        background-color: rgba(136, 192, 208, 0.12);
+    }}
+
+    QTableWidget::item:selected, QTableView::item:selected {{
+        background-color: rgba(136, 192, 208, 0.18);
+        color: {t["text_main"]};
     }}
 
     QHeaderView::section {{
         background-color: {t["bg_tertiary"]};
-        color: {t["text_main"]};
-        padding: 10px;
+        color: {NORD8};
+        padding: 10px 12px;
         border: none;
-        border-bottom: 2px solid {t["border"]};
+        border-bottom: 2px solid {NORD8};
         font-weight: bold;
+        font-size: 13px;
     }}
-    
+
     QTableCornerButton::section {{
         background-color: {t["bg_tertiary"]};
         border: 1px solid {t["border"]};
@@ -436,24 +498,51 @@ def _generate_stylesheet(t):
         background-color: {t["bg_tertiary"]};
     }}
 
-    /* ===== SCROLLBARS ===== */
+    /* ===== SCROLLBARS (Finos y premium) ===== */
     QScrollBar:vertical {{
-        background-color: {t["bg_main"]};
-        width: 14px;
+        background-color: transparent;
+        width: 10px;
+        margin: 4px 2px;
     }}
     
     QScrollBar::handle:vertical {{
-        background-color: {t["border"]};
-        min-height: 20px;
-        border-radius: 7px;
-        border: 3px solid {t["bg_main"]};
+        background-color: rgba(136, 192, 208, 0.25);
+        min-height: 30px;
+        border-radius: 4px;
     }}
     
     QScrollBar::handle:vertical:hover {{
-        background-color: {t["text_secondary"]};
+        background-color: rgba(136, 192, 208, 0.45);
     }}
     
-    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0px; }}
+    QScrollBar:horizontal {{
+        background-color: transparent;
+        height: 10px;
+        margin: 2px 4px;
+    }}
+    
+    QScrollBar::handle:horizontal {{
+        background-color: rgba(136, 192, 208, 0.25);
+        min-width: 30px;
+        border-radius: 4px;
+    }}
+    
+    QScrollBar::handle:horizontal:hover {{
+        background-color: rgba(136, 192, 208, 0.45);
+    }}
+    
+    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0px; width: 0px; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+
+    /* ===== TOOLTIPS (Premium oscuros) ===== */
+    QToolTip {{
+        background-color: {t["bg_secondary"]};
+        color: {t["text_main"]};
+        border: 1px solid {NORD8};
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+    }}
 
     /* ===== MESSAGE BOX ===== */
     QMessageBox {{
@@ -605,28 +694,38 @@ def set_btn_cancel(btn):
 # ============================================================
 
 _ACTION_BTN = """
-QPushButton {{
-    background-color: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 0;
-}}
-QPushButton:hover {{
-    background-color: rgba(136, 192, 208, 0.2);
-}}
+QPushButton {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 6px;
+    padding: 0px !important;
+    margin: 0px !important;
+    text-align: center;
+}
+QPushButton:hover {
+    background-color: rgba(136, 192, 208, 0.2) !important;
+}
 """
 
 def _set_action_icon(btn, icon_name, color):
     btn.setStyleSheet(_ACTION_BTN)
-    btn.setFixedSize(36, 36)
-    btn.setIcon(app_icon(icon_name, color=color, size=16))
-    btn.setIconSize(QSize(16, 16))
+    btn.setFixedSize(36, 36) # Forzamos recuadro amplio para que el icono quepa en el centro
+    btn.setIcon(app_icon(icon_name, color=color, size=20)) # Iconos grandes (20)
+    btn.setIconSize(QSize(22, 22)) # Forzamos el área del icono un poco más grande para evitar recortes (clipping)
 
 def estilizar_btn_ver(btn):
-    _set_action_icon(btn, "fa5s.eye", NORD15)
+    """El icono fa5s.eye es ovalado/horizontal, necesita un botón más ancho que el resto"""
+    btn.setStyleSheet(_ACTION_BTN)
+    btn.setFixedSize(48, 36)  # Más ancho que el estándar 36x36 para el ojo ovalado
+    btn.setIcon(app_icon("fa5s.eye", color=NORD15, size=20))
+    btn.setIconSize(QSize(28, 20))  # Área más ancha que alta para respetar la forma ovalada
 
 def estilizar_btn_editar(btn):
-    _set_action_icon(btn, "fa5s.edit", PRIMARY_COLOR)
+    """El icono fa5s.edit también es más ancho que cuadrado"""
+    btn.setStyleSheet(_ACTION_BTN)
+    btn.setFixedSize(48, 36)
+    btn.setIcon(app_icon("fa5s.edit", color=PRIMARY_COLOR, size=20))
+    btn.setIconSize(QSize(28, 20))
 
 def estilizar_btn_eliminar(btn):
     _set_action_icon(btn, "fa5s.trash", DANGER_COLOR)
@@ -654,3 +753,12 @@ def estilizar_btn_permisos(btn):
 
 def estilizar_btn_factura(btn):
     _set_action_icon(btn, "fa5s.file-invoice-dollar", NORD8)  # Cian para factura
+
+def estilizar_btn_2fa(btn):
+    _set_action_icon(btn, "fa5s.shield-alt", NORD14)  # Verde para 2FA activo
+
+def estilizar_btn_2fa_off(btn):
+    _set_action_icon(btn, "fa5s.shield-alt", NORD3)  # Gris para 2FA inactivo
+
+def estilizar_btn_garantia(btn):
+    _set_action_icon(btn, "fa5s.certificate", NORD15)  # Violeta para garantía
