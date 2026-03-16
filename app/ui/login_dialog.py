@@ -32,6 +32,7 @@ class LoginDialog(QDialog):
         self.llave_generada = None  # Para mostrar al crear usuario
         self._pendiente_2fa = None  # Datos del usuario pendiente de verificación 2FA
         self.permitir_autologin = permitir_autologin
+        self._setup_complete = False  # Guard para evitar que resizeEvent oculte el logo antes de mostrarse
 
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} - Acceso")
         self.setModal(True)
@@ -41,10 +42,9 @@ class LoginDialog(QDialog):
             Qt.WindowCloseButtonHint
         )
         screen = QApplication.primaryScreen().availableGeometry()
-        max_h = int(screen.height() * 0.92)
-        self.setFixedWidth(520)
-        self.setMaximumHeight(max_h)
-        self.resize(520, min(520, max_h))
+        w = min(520, int(screen.width() * 0.85))
+        h = min(580, int(screen.height() * 0.92))
+        self.setFixedSize(w, h)
         
         self.setup_ui()
         
@@ -68,6 +68,9 @@ class LoginDialog(QDialog):
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(50, self._forzar_repintado_con_movimiento)
 
+        # Marcar setup completo para que resizeEvent pueda ocultar/mostrar el logo
+        self._setup_complete = True
+
         # Intentar auto-login DESPUÉS de que el diálogo se haya mostrado
         if hasattr(self, '_pendiente_autologin') and self._pendiente_autologin:
             self._pendiente_autologin = False
@@ -86,58 +89,62 @@ class LoginDialog(QDialog):
         if self.intentar_autologin_silencioso():
             self.accept()
 
+    def _make_scroll_page(self, widget):
+        """Envuelve un widget en QScrollArea para páginas largas"""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(widget)
+        return scroll
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
+        layout.setSpacing(0)
+
         # Stack para cambiar entre vistas
         self.stack = QStackedWidget()
-        
-        # Página 0: Login
+
+        # Página 0: Login — sin scroll, cabe perfectamente
         self.pagina_login = self.crear_pagina_login()
         self.stack.addWidget(self.pagina_login)
-        
-        # Página 1: Configuración inicial (primer usuario)
-        self.pagina_setup = self.crear_pagina_setup()
-        self.stack.addWidget(self.pagina_setup)
-        
-        # Página 2: Recuperar contraseña
-        self.pagina_recovery = self.crear_pagina_recovery()
-        self.stack.addWidget(self.pagina_recovery)
-        
-        # Página 3: Mostrar llave generada
-        self.pagina_llave = self.crear_pagina_llave()
-        self.stack.addWidget(self.pagina_llave)
+
+        # Página 1: Configuración inicial — más larga, scroll interno
+        _setup_widget = self.crear_pagina_setup()
+        self.pagina_setup = _setup_widget
+        self.stack.addWidget(self._make_scroll_page(_setup_widget))
+
+        # Página 2: Recuperar contraseña — scroll interno
+        _recovery_widget = self.crear_pagina_recovery()
+        self.pagina_recovery = _recovery_widget
+        self.stack.addWidget(self._make_scroll_page(_recovery_widget))
+
+        # Página 3: Mostrar llave — scroll interno
+        _llave_widget = self.crear_pagina_llave()
+        self.pagina_llave = _llave_widget
+        self.stack.addWidget(self._make_scroll_page(_llave_widget))
 
         # Página 4: Verificación TOTP 2FA
         self.pagina_totp = self.crear_pagina_totp()
         self.stack.addWidget(self.pagina_totp)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setWidget(self.stack)
-        layout.addWidget(scroll)
+        layout.addWidget(self.stack)
 
     def crear_pagina_login(self):
         """Crea la página de login normal"""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(0)
-        layout.setContentsMargins(30, 14, 30, 14)
+        h, v = self._margenes_responsivos()
+        layout.setContentsMargins(h, v, h, v)
 
-        # ── Logo del establecimiento en lugar del candado ──
-        logo_path = self._obtener_logo_establecimiento()
-        if logo_path and os.path.exists(logo_path):
-            logo_label = QLabel()
-            logo_label.setAlignment(Qt.AlignCenter)
-            pixmap = QPixmap(logo_path)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(160, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                logo_label.setPixmap(scaled)
-                layout.addWidget(logo_label)
-                layout.addSpacing(6)
+        # ── Logo adaptativo: banner fino que se oculta en pantallas pequeñas ──
+        self._logo_banner = self._crear_logo_banner()
+        if self._logo_banner:
+            layout.addWidget(self._logo_banner)
+            layout.addSpacing(2)
 
         title = QLabel(tr("Iniciar Sesión"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
@@ -152,81 +159,106 @@ class LoginDialog(QDialog):
         line.setFixedHeight(1)
         layout.addWidget(line)
 
-        layout.addSpacing(14)
+        layout.addSpacing(10)
 
-        # ── Tarjeta con campos ──
+        # ── Tarjeta de diseño moderno ──
         card_frame = QFrame()
         card_frame.setObjectName("cardPanel")
+        card_frame.setStyleSheet("""
+            #cardPanel {
+                background-color: #3B4252;
+                border-radius: 12px;
+                border: 1px solid #4C566A;
+            }
+            QLineEdit {
+                background-color: #2E3440;
+                border: 1px solid #434C5E;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-size: 14px;
+                color: #ECEFF4;
+            }
+            QLineEdit:focus {
+                border: 1px solid #88C0D0;
+                background-color: #3B4252;
+            }
+            QCheckBox {
+                color: #D8DEE9;
+                font-size: 12px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid #4C566A;
+                background-color: #2E3440;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #88C0D0;
+                border: 1px solid #88C0D0;
+            }
+            QPushButton#btnRecovery {
+                background: none; border: none;
+                color: #88C0D0; font-size: 12px;
+                text-align: right; margin-top: 5px;
+            }
+            QPushButton#btnRecovery:hover { color: #8FBCBB; text-decoration: underline; }
+        """)
         card_layout = QVBoxLayout(card_frame)
-        card_layout.setSpacing(0)
-        card_layout.setContentsMargins(25, 20, 25, 20)
+        card_layout.setSpacing(12)
+        ch = max(20, int(self.width() * 0.08))
+        card_layout.setContentsMargins(ch, 20, ch, 20)
 
-        user_label = QLabel(tr("Usuario") + ":")
-        user_label.setStyleSheet("font-weight: bold; color: #D8DEE9; font-size: 13px;")
-        card_layout.addWidget(user_label)
-        card_layout.addSpacing(5)
-
+        # Usuario Input
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText(tr("Usuario"))
-        self.username_input.setMinimumHeight(40)
-        self.username_input.setStyleSheet("padding: 5px 10px; font-size: 13px;")
+        self.username_input.setMinimumHeight(48)
         self.username_input.returnPressed.connect(lambda: self.password_input.setFocus())
         card_layout.addWidget(self.username_input)
-        card_layout.addSpacing(14)
 
-        password_label = QLabel(tr("Contraseña") + ":")
-        password_label.setStyleSheet("font-weight: bold; color: #D8DEE9; font-size: 13px;")
-        card_layout.addWidget(password_label)
-        card_layout.addSpacing(5)
-
+        # Contraseña Input
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setPlaceholderText(tr("Contraseña"))
-        self.password_input.setMinimumHeight(40)
-        self.password_input.setStyleSheet("padding: 5px 10px; font-size: 13px;")
+        self.password_input.setMinimumHeight(48)
         self.password_input.returnPressed.connect(self.intentar_login)
         card_layout.addWidget(self.password_input)
-        card_layout.addSpacing(18)
 
-        btn_login = QPushButton(tr("Iniciar Sesión"))
-        btn_login.setMinimumHeight(44)
-        btn_login.setCursor(Qt.PointingHandCursor)
-        apply_btn_primary(btn_login)
-        btn_login.clicked.connect(self.intentar_login)
-        card_layout.addWidget(btn_login)
-
-        layout.addWidget(card_frame)
-        layout.addSpacing(10)
-
-        # ── Opciones ──
+        # Opciones Checkboxes
         from PyQt5.QtWidgets import QCheckBox
         options_layout = QHBoxLayout()
         self.check_recordar = QCheckBox(tr("Recordar credenciales"))
-        self.check_recordar.setStyleSheet("color: #7B88A0; font-size: 11px;")
-        self.check_recordar.setToolTip(tr("Recordar credenciales"))
+        self.check_recordar.setToolTip(tr("Recuerda tu usuario la próxima vez"))
         options_layout.addWidget(self.check_recordar)
+        
         options_layout.addStretch()
+        
         self.check_autologin = QCheckBox(tr("Auto-login"))
-        self.check_autologin.setStyleSheet("color: #7B88A0; font-size: 11px;")
-        self.check_autologin.setToolTip(tr("Auto-login"))
+        self.check_autologin.setToolTip(tr("Entrar automáticamente si las credenciales están guardadas"))
         options_layout.addWidget(self.check_autologin)
-        layout.addLayout(options_layout)
-        layout.addSpacing(6)
+        
+        card_layout.addLayout(options_layout)
 
-        # ── Link recuperar contraseña ──
+        # Botón Login
+        card_layout.addSpacing(4)
+        btn_login = QPushButton(tr("Iniciar Sesión"))
+        btn_login.setMinimumHeight(48)
+        btn_login.setCursor(Qt.PointingHandCursor)
+        apply_btn_primary(btn_login)
+        # Asegurar estilo consistente para el botón con el borde redondeado del card
+        btn_login.setStyleSheet(btn_login.styleSheet() + "QPushButton { font-size: 15px; font-weight: bold; border-radius: 8px; }")
+        btn_login.clicked.connect(self.intentar_login)
+        card_layout.addWidget(btn_login)
+
+        # Recuperar Contraseña Link
         btn_recovery = QPushButton(tr("¿Olvidaste tu contraseña?"))
-        btn_recovery.setStyleSheet("""
-            QPushButton {
-                background: none; border: none;
-                color: #5E81AC; font-size: 12px;
-                text-decoration: underline;
-            }
-            QPushButton:hover { color: #81A1C1; }
-        """)
+        btn_recovery.setObjectName("btnRecovery")
         btn_recovery.setCursor(Qt.PointingHandCursor)
         btn_recovery.clicked.connect(self.mostrar_recovery)
-        layout.addWidget(btn_recovery, alignment=Qt.AlignCenter)
-        layout.addSpacing(12)
+        card_layout.addWidget(btn_recovery)
+
+        layout.addWidget(card_frame)
+        layout.addSpacing(5)
 
         # ── Copyright ──
         footer = QLabel(f"© {datetime.now().year} - {APP_NAME} v{APP_VERSION}")
@@ -241,7 +273,8 @@ class LoginDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(8)
-        layout.setContentsMargins(40, 20, 40, 20)
+        h, v = self._margenes_responsivos()
+        layout.setContentsMargins(h, v, h, v)
 
         # Header
         self.crear_header(layout, tr("Configuración Inicial"), 
@@ -318,7 +351,8 @@ class LoginDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(12)
-        layout.setContentsMargins(40, 30, 40, 30)
+        h, v = self._margenes_responsivos()
+        layout.setContentsMargins(h, v, h, v)
 
         # Header
         self.crear_header(layout, tr("Recuperar Contraseña"),
@@ -387,7 +421,8 @@ class LoginDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(15)
-        layout.setContentsMargins(40, 30, 40, 30)
+        h, v = self._margenes_responsivos()
+        layout.setContentsMargins(h, v, h, v)
 
         # Header
         self.crear_header(layout, tr("¡Usuario Creado!"), 
@@ -459,7 +494,8 @@ class LoginDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(15)
-        layout.setContentsMargins(40, 30, 40, 30)
+        h, v = self._margenes_responsivos()
+        layout.setContentsMargins(h, v, h, v)
 
         self.crear_header(layout, tr("Verificación en Dos Pasos"),
                          tr("Introduce el código de 6 dígitos de tu app de autenticación"))
@@ -619,21 +655,7 @@ class LoginDialog(QDialog):
         layout.addWidget(line)
 
     def crear_footer(self, layout, mostrar_logo=True):
-        """Crea el footer común con logo del establecimiento"""
-        # Logo del establecimiento (solo si mostrar_logo=True)
-        if mostrar_logo:
-            logo_path = self._obtener_logo_establecimiento()
-            if logo_path and os.path.exists(logo_path):
-                logo_label = QLabel()
-                logo_label.setAlignment(Qt.AlignCenter)
-                pixmap = QPixmap(logo_path)
-                if not pixmap.isNull():
-                    # Escalar manteniendo proporción, máximo 240x160
-                    scaled = pixmap.scaled(240, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    logo_label.setPixmap(scaled)
-                    logo_label.setStyleSheet("margin-bottom: 10px;")
-                    layout.addWidget(logo_label)
-
+        """Crea el footer común (logo ahora se muestra como fondo del diálogo)"""
         # Copyright
         footer = QLabel(f"© {datetime.now().year} - {APP_NAME} v{APP_VERSION}")
         footer.setStyleSheet("color: #D8DEE9; font-size: 10px;")
@@ -652,6 +674,59 @@ class LoginDialog(QDialog):
         except (OSError, ValueError, RuntimeError) as e:
             logger.error(f"Error obteniendo logo: {e}")
         return None
+
+    def _margenes_responsivos(self):
+        """Calcula márgenes proporcionales al ancho actual del diálogo"""
+        w = self.width()
+        h_margin = max(20, int(w * 0.06))
+        v_margin = max(14, int(w * 0.03))
+        return h_margin, v_margin
+
+    def resizeEvent(self, event):
+        """Actualiza márgenes y visibilidad del logo cuando la ventana cambia"""
+        super().resizeEvent(event)
+        self._actualizar_margenes()
+
+    def _actualizar_margenes(self):
+        """Recalcula y aplica márgenes proporcionales a las páginas directas (no scroll)"""
+        h, v = self._margenes_responsivos()
+        # Solo actualizar páginas que son QWidget directo (no QScrollArea)
+        for page in (self.pagina_login, self.pagina_totp):
+            if hasattr(page, 'layout') and page.layout():
+                page.layout().setContentsMargins(h, v, h, v)
+        # Ocultar logo en pantallas pequeñas (< 550px alto), solo después de showEvent
+        if self._setup_complete and hasattr(self, '_logo_banner') and self._logo_banner:
+            self._logo_banner.setVisible(self.height() >= 550)
+
+    def _crear_logo_banner(self):
+        """Crea un banner fino (48px) con el logo del establecimiento, o None si no hay logo"""
+        logo_path = self._obtener_logo_establecimiento()
+        if not logo_path or not os.path.exists(logo_path):
+            return None
+
+        pixmap = QPixmap(logo_path)
+        if pixmap.isNull():
+            return None
+
+        banner = QFrame()
+        banner.setFixedHeight(100)
+        banner.setStyleSheet("QFrame { background: transparent; }")
+        banner_layout = QHBoxLayout(banner)
+        banner_layout.setContentsMargins(0, 0, 0, 0)
+        banner_layout.setAlignment(Qt.AlignCenter)
+
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+        scaled = pixmap.scaled(380, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo_label.setPixmap(scaled)
+        logo_label.setStyleSheet("background: transparent;")
+        banner_layout.addWidget(logo_label)
+
+        # Ocultar en pantallas pequeñas
+        screen = QApplication.primaryScreen().availableGeometry()
+        banner.setVisible(screen.height() >= 550)
+
+        return banner
 
     def apply_styles(self):
         """Aplica estilos globales - Nord theme (inherited from app stylesheet)"""

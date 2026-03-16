@@ -52,7 +52,9 @@ class MainWindow(QMainWindow):
 
         nombre_empresa = self.company_info['name'] or APP_NAME
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} - {nombre_empresa} - {self.usuario['nombre_completo']}")
-        self.setMinimumSize(1024, 700)
+        self.setMinimumSize(800, 600)
+        self._sidebar_expanded = True
+        self._user_toggled_sidebar = False  # True si el usuario tocó el toggle manualmente
         self.setup_ui()
         self.apply_styles()
         self.showMaximized()
@@ -179,10 +181,6 @@ class MainWindow(QMainWindow):
         self.registrar_actividad_usuario()
         super().mousePressEvent(event)
 
-    def keyPressEvent(self, event):
-        """Registra actividad en cada tecla presionada"""
-        self.registrar_actividad_usuario()
-        super().keyPressEvent(event)
 
     def _cargar_datos_empresa(self):
         """Carga los datos del establecimiento del usuario actual"""
@@ -267,6 +265,37 @@ class MainWindow(QMainWindow):
         # Establecer página inicial (Home)
         self.switch_page(0)
 
+    # ── Estilos sidebar ────────────────────────────────────────────────────────
+    _BTN_EXPANDED = """
+        QPushButton {
+            background-color: transparent;
+            color: #D8DEE9;
+            text-align: left;
+            padding: 14px 20px 14px 16px;
+            border: none;
+            border-radius: 12px;
+            font-family: "Segoe UI";
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 52px;
+        }
+        QPushButton:hover  { background-color: rgba(136,192,208,0.08); color: #ECEFF4; }
+        QPushButton:checked { background-color: rgba(136,192,208,0.15); color: #88C0D0; font-weight: bold; }
+    """
+    _BTN_COLLAPSED = """
+        QPushButton {
+            background-color: transparent;
+            color: #D8DEE9;
+            text-align: center;
+            padding: 0px;
+            border: none;
+            border-radius: 12px;
+            min-height: 52px;
+        }
+        QPushButton:hover  { background-color: rgba(136,192,208,0.08); color: #ECEFF4; }
+        QPushButton:checked { background-color: rgba(136,192,208,0.15); color: #88C0D0; }
+    """
+
     def create_sidebar(self):
         """Crea la barra lateral de navegación con estilo fluent"""
         from PyQt5.QtWidgets import QScrollArea, QSizePolicy
@@ -279,20 +308,42 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Área scroll para botones
+        # ── Botón toggle colapsar/expandir ──────────────────────────────────
+        self.btn_sidebar_toggle = QPushButton()
+        self.btn_sidebar_toggle.setFixedHeight(38)
+        self.btn_sidebar_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_sidebar_toggle.setIcon(app_icon("mdi.chevron-left", color="#88C0D0", size=18))
+        self.btn_sidebar_toggle.setIconSize(QSize(18, 18))
+        self.btn_sidebar_toggle.setToolTip(tr("Colapsar menú"))
+        self.btn_sidebar_toggle.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                border-bottom: 1px solid #3B4252;
+                border-radius: 0px;
+                padding-right: 10px;
+                text-align: right;
+            }
+            QPushButton:hover { background: rgba(136,192,208,0.08); }
+        """)
+        self.btn_sidebar_toggle.clicked.connect(lambda: self._toggle_sidebar())
+        main_layout.addWidget(self.btn_sidebar_toggle)
+
+        # ── Área scroll para botones de navegación ──────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(0)  # NoFrame
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
         nav_container = QWidget()
         nav_layout = QVBoxLayout(nav_container)
-        nav_layout.setContentsMargins(12, 12, 12, 12)
-        nav_layout.setSpacing(6)
+        nav_layout.setContentsMargins(8, 8, 8, 8)
+        nav_layout.setSpacing(4)
 
         # Datos de navegación con FluentIcon
-        nav_items = [
+        self._nav_items_data = [
             (FluentIcon.HOME, tr("Home"), 0),
             (FluentIcon.SHOPPING_CART, tr("Ventas"), 1),
             (FluentIcon.MARKET, tr("Compras"), 2),
@@ -301,53 +352,26 @@ class MainWindow(QMainWindow):
             (FluentIcon.TAG, tr("Caja"), 5),
             (FluentIcon.LIBRARY, tr("Inventario"), 6),
         ]
-
         if self.auth_manager.is_admin():
-            nav_items.append((FluentIcon.SETTING, tr("Ajustes"), 7))
+            self._nav_items_data.append((FluentIcon.SETTING, tr("Ajustes"), 7))
 
         self.nav_buttons = []
-        btn_style = """
-            QPushButton {
-                background-color: transparent;
-                color: #D8DEE9;
-                text-align: left;
-                padding: 14px 20px 14px 20px;
-                border: none;
-                border-radius: 12px;
-                font-family: "Segoe UI";
-                font-size: 16px;
-                font-weight: bold;
-                min-height: 52px;
-            }
-            QPushButton:hover {
-                background-color: rgba(136, 192, 208, 0.08);
-                color: #ECEFF4;
-            }
-            QPushButton:checked {
-                background-color: rgba(136, 192, 208, 0.15);
-                color: #88C0D0;
-                font-weight: bold;
-            }
-        """
-
-        from qfluentwidgets import setTheme, Theme as FT
         current_theme = QApplication.instance().property("theme") or "dark"
         icon_color = "#D8DEE9" if current_theme == "dark" else "#2E3440"
 
-        for fluent_icon, label, page_index in nav_items:
+        for fluent_icon, label, page_index in self._nav_items_data:
+            from PyQt5.QtWidgets import QSizePolicy
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setFixedHeight(52)
-            btn.setStyleSheet(btn_style)
-
-            # Renderizar FluentIcon a QIcon
-            icon_obj = fluent_icon.icon(color=icon_color)
-            btn.setIcon(icon_obj)
+            btn.setStyleSheet(self._BTN_EXPANDED)
+            btn.setIcon(fluent_icon.icon(color=icon_color))
             btn.setIconSize(QSize(24, 24))
-
+            btn.setToolTip(label)
             btn.setProperty("fluent_icon", fluent_icon)
+            btn.setProperty("nav_label", label)
             btn.clicked.connect(lambda checked, idx=page_index: self.switch_page(idx))
             nav_layout.addWidget(btn)
             self.nav_buttons.append(btn)
@@ -356,7 +380,7 @@ class MainWindow(QMainWindow):
         scroll.setWidget(nav_container)
         main_layout.addWidget(scroll, 1)
 
-        # Logo de la empresa al pie
+        # ── Logo de la empresa al pie ────────────────────────────────────────
         self.logo_container = QWidget()
         self.logo_container.setObjectName("logoContainer")
         logo_layout = QVBoxLayout(self.logo_container)
@@ -376,13 +400,69 @@ class MainWindow(QMainWindow):
 
         return sidebar_widget
 
+    def _toggle_sidebar(self, force_collapsed=None):
+        """Colapsa o expande el sidebar (solo iconos ↔ iconos + texto)"""
+        if force_collapsed is None:
+            # Llamada manual del usuario — marcar para evitar auto-override
+            self._user_toggled_sidebar = True
+            new_expanded = not self._sidebar_expanded
+        else:
+            new_expanded = not force_collapsed
+
+        self._sidebar_expanded = new_expanded
+        current_theme = QApplication.instance().property("theme") or "dark"
+        icon_color = "#D8DEE9" if current_theme == "dark" else "#2E3440"
+        active_color = "#88C0D0"
+
+        if new_expanded:
+            self.sidebar.setFixedWidth(260)
+            self.btn_sidebar_toggle.setIcon(app_icon("mdi.chevron-left", color="#88C0D0", size=18))
+            self.btn_sidebar_toggle.setToolTip(tr("Colapsar menú"))
+            for btn in self.nav_buttons:
+                label = btn.property("nav_label")
+                btn.setText(label)
+                btn.setStyleSheet(self._BTN_EXPANDED)
+                btn.setIconSize(QSize(24, 24))
+            self.logo_container.setVisible(
+                self.logo_label.pixmap() is not None and not self.logo_label.pixmap().isNull()
+            )
+        else:
+            self.sidebar.setFixedWidth(60)
+            self.btn_sidebar_toggle.setIcon(app_icon("mdi.chevron-right", color="#88C0D0", size=18))
+            self.btn_sidebar_toggle.setToolTip(tr("Expandir menú"))
+            for btn in self.nav_buttons:
+                btn.setText("")
+                btn.setStyleSheet(self._BTN_COLLAPSED)
+                btn.setIconSize(QSize(24, 24))
+            self.logo_container.setVisible(False)
+
+        # Redibujar iconos con el color correcto (activo/inactivo)
+        current_index = self.stacked_widget.currentIndex()
+        for i, btn in enumerate(self.nav_buttons):
+            fluent_icon = btn.property("fluent_icon")
+            if fluent_icon:
+                color = active_color if i == current_index else icon_color
+                btn.setIcon(fluent_icon.icon(color=color))
+
+    def resizeEvent(self, event):
+        """Auto-colapsa el sidebar en ventanas estrechas"""
+        super().resizeEvent(event)
+        if not hasattr(self, '_sidebar_expanded') or not hasattr(self, '_user_toggled_sidebar'):
+            return
+        width = event.size().width()
+        # Auto-colapsar bajo 1100px; auto-expandir sobre 1200px (solo si no fue el usuario quien lo plegó)
+        if width < 1100 and self._sidebar_expanded and not self._user_toggled_sidebar:
+            self._toggle_sidebar(force_collapsed=True)
+        elif width >= 1200 and not self._sidebar_expanded and not self._user_toggled_sidebar:
+            self._toggle_sidebar(force_collapsed=False)
+
     def _add_page(self, widget):
         """Envuelve un widget en QScrollArea y lo añade al stacked_widget.
-        Así cuando la ventana sea pequeña aparecen scrollbars en vez de solapamientos."""
+        Solo scroll vertical — el contenido se adapta al ancho disponible."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setWidget(widget)
         self.stacked_widget.addWidget(scroll)
@@ -528,6 +608,19 @@ class MainWindow(QMainWindow):
         usuario_info = QLabel(f"👤 {self.usuario['nombre_completo']} ({self.usuario['rol'].upper()})")
         usuario_info.setObjectName("usuarioInfo")
 
+        # Botón pantalla completa
+        self.btn_fullscreen = QPushButton()
+        self.btn_fullscreen.setIcon(app_icon("mdi.fullscreen", color="#ffffff", size=22))
+        self.btn_fullscreen.setIconSize(QSize(22, 22))
+        self.btn_fullscreen.setFixedSize(38, 38)
+        self.btn_fullscreen.setCursor(Qt.PointingHandCursor)
+        self.btn_fullscreen.setToolTip(tr("Pantalla completa  (F11)"))
+        self.btn_fullscreen.setStyleSheet("""
+            QPushButton { background: transparent; border: none; border-radius: 8px; }
+            QPushButton:hover { background: rgba(255,255,255,0.12); }
+        """)
+        self.btn_fullscreen.clicked.connect(lambda: self._toggle_fullscreen())
+
         # Botón cerrar sesión (alto contraste)
         btn_logout = QPushButton("🚪 " + tr("Cerrar Sesión"))
         btn_logout.setObjectName("btnLogout")
@@ -538,6 +631,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(info)
         header_layout.addSpacing(14)
         header_layout.addWidget(usuario_info)
+        header_layout.addWidget(self.btn_fullscreen)
         header_layout.addWidget(btn_logout)
 
         # Header con estilo dinámico desde styles.py
@@ -816,6 +910,26 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError, RuntimeError) as e:
             logger.error(f"Error cargando logo: {e}")
             self.logo_container.setVisible(False)
+
+    def _toggle_fullscreen(self):
+        """Alterna entre pantalla completa y ventana maximizada."""
+        if self.isFullScreen():
+            self.btn_fullscreen.setIcon(app_icon("mdi.fullscreen", color="#ffffff", size=22))
+            self.btn_fullscreen.setToolTip(tr("Pantalla completa  (F11)"))
+            # hide() + timer: deja al OS procesar el ocultado antes de maximizar
+            self.hide()
+            QTimer.singleShot(50, self.showMaximized)
+        else:
+            self.btn_fullscreen.setIcon(app_icon("mdi.fullscreen-exit", color="#ffffff", size=22))
+            self.btn_fullscreen.setToolTip(tr("Salir de pantalla completa  (F11)"))
+            self.showFullScreen()
+
+    def keyPressEvent(self, event):
+        """Registra actividad en cada tecla presionada"""
+        if event.key() == Qt.Key_F11:
+            self._toggle_fullscreen()
+        self.registrar_actividad_usuario()
+        super().keyPressEvent(event)
 
     def apply_styles(self):
         """Aplica estilos modernos DARK MODE"""
