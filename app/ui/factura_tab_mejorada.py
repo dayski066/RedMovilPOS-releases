@@ -4,7 +4,8 @@ Pestaña mejorada para crear facturas con detección automática de clientes y p
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QTableWidget, QTableWidgetItem, QGroupBox,
                              QDateEdit, QComboBox, QHeaderView, QDoubleSpinBox,
-                             QSpinBox, QCompleter, QApplication, QScrollArea, QFrame)
+                             QSpinBox, QCompleter, QApplication, QScrollArea, QFrame,
+                             QListWidget, QListWidgetItem)
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QColor, QFont
 from app.utils.notify import notify_success, notify_error, notify_warning, notify_info, ask_confirm
@@ -102,13 +103,14 @@ class FacturaTabMejorada(QWidget):
         cliente_layout.setContentsMargins(8, 6, 8, 6)
         cliente_layout.setSpacing(10)
 
-        # Búsqueda rápida por DNI o Teléfono
+        # Búsqueda rápida por nombre, DNI o Teléfono
         busqueda_layout = QHBoxLayout()
         busqueda_layout.setAlignment(Qt.AlignVCenter)
-        busqueda_layout.addWidget(QLabel(tr("Buscar por DNI/Teléfono") + ":"))
+        busqueda_layout.addWidget(QLabel(tr("Buscar cliente") + ":"))
         self.busqueda_cliente_input = SearchLineEdit()
         self.busqueda_cliente_input.setFixedHeight(36)
-        self.busqueda_cliente_input.setPlaceholderText(tr("Introduce DNI o Teléfono y pulsa Enter"))
+        self.busqueda_cliente_input.setPlaceholderText(tr("Nombre, DNI o Teléfono..."))
+        self.busqueda_cliente_input.textChanged.connect(self._filtrar_clientes_live)
         self.busqueda_cliente_input.returnPressed.connect(self.buscar_cliente_auto)
         busqueda_layout.addWidget(self.busqueda_cliente_input)
 
@@ -121,6 +123,25 @@ class FacturaTabMejorada(QWidget):
         busqueda_layout.addWidget(btn_buscar_cliente)
 
         cliente_layout.addLayout(busqueda_layout)
+
+        # Lista de sugerencias en tiempo real
+        self.lista_sugerencias = QListWidget()
+        self.lista_sugerencias.setMaximumHeight(100)
+        self.lista_sugerencias.setVisible(False)
+        self.lista_sugerencias.setStyleSheet("""
+            QListWidget {
+                background-color: #2E3440;
+                border: 1px solid #5E81AC;
+                border-radius: 6px;
+                color: #ECEFF4;
+                font-size: 13px;
+            }
+            QListWidget::item { padding: 6px 10px; border-bottom: 1px solid #3B4252; }
+            QListWidget::item:hover { background-color: #3B4252; }
+            QListWidget::item:selected { background-color: #5E81AC; color: #ffffff; }
+        """)
+        self.lista_sugerencias.itemClicked.connect(self._seleccionar_cliente_lista)
+        cliente_layout.addWidget(self.lista_sugerencias)
 
         # Selector de cliente existente
         selector_layout = QHBoxLayout()
@@ -342,45 +363,67 @@ class FacturaTabMejorada(QWidget):
         scroll_area.setWidget(content_widget)
         main_layout.addWidget(scroll_area)
 
-    def buscar_cliente_auto(self):
-        """Busca cliente automáticamente por DNI o Teléfono"""
-        busqueda = self.busqueda_cliente_input.text().strip()
+    def _filtrar_clientes_live(self, texto):
+        """Filtra clientes en tiempo real por nombre, DNI o teléfono"""
+        texto = texto.strip()
+        self.lista_sugerencias.clear()
+        if len(texto) < 2:
+            self.lista_sugerencias.setVisible(False)
+            return
+        like = f'%{texto}%'
+        clientes = self.db.fetch_all(
+            "SELECT * FROM clientes WHERE nombre LIKE ? OR nif LIKE ? OR telefono LIKE ? LIMIT 8",
+            (like, like, like)
+        )
+        if not clientes:
+            self.lista_sugerencias.setVisible(False)
+            return
+        for c in clientes:
+            item = QListWidgetItem(f"{c.get('nombre','')}   |   {c.get('nif','-') or '-'}   |   {c.get('telefono','-') or '-'}")
+            item.setData(Qt.UserRole, dict(c))
+            self.lista_sugerencias.addItem(item)
+        self.lista_sugerencias.setVisible(True)
 
+    def _seleccionar_cliente_lista(self, item):
+        cliente = item.data(Qt.UserRole)
+        self._rellenar_campos_cliente(cliente)
+        self.lista_sugerencias.setVisible(False)
+        self.busqueda_cliente_input.clear()
+
+    def _rellenar_campos_cliente(self, cliente):
+        self.nombre_input.setText(cliente.get('nombre') or '')
+        self.nif_input.setText(cliente.get('nif') or '')
+        self.direccion_input.setText(cliente.get('direccion') or '')
+        self.telefono_input.setText(cliente.get('telefono') or '')
+        self.cp_input.setText(cliente.get('codigo_postal') or '')
+        self.ciudad_input.setText(cliente.get('ciudad') or '')
+        self.provincia_input.setText(cliente.get('provincia') or '')
+        index = self.cliente_combo.findData(cliente['id'])
+        if index >= 0:
+            self.cliente_combo.setCurrentIndex(index)
+
+    def buscar_cliente_auto(self):
+        """Busca cliente al pulsar Enter o Buscar"""
+        if self.lista_sugerencias.isVisible() and self.lista_sugerencias.count() > 0:
+            self._seleccionar_cliente_lista(self.lista_sugerencias.item(0))
+            return
+        busqueda = self.busqueda_cliente_input.text().strip()
         if not busqueda:
             return
-
-        # Buscar por DNI
-        cliente = self.db.fetch_one("SELECT * FROM clientes WHERE nif = ?", (busqueda,))
-
-        # Si no se encuentra, buscar por teléfono
-        if not cliente:
-            cliente = self.db.fetch_one("SELECT * FROM clientes WHERE telefono = ?", (busqueda,))
-
+        like = f'%{busqueda}%'
+        cliente = self.db.fetch_one(
+            "SELECT * FROM clientes WHERE nif LIKE ? OR telefono LIKE ? OR nombre LIKE ? LIMIT 1",
+            (like, like, like)
+        )
         if cliente:
-            # Cliente encontrado - autocompletar
-            self.nombre_input.setText(cliente['nombre'])
-            self.nif_input.setText(cliente['nif'] or '')
-            self.direccion_input.setText(cliente['direccion'] or '')
-            self.telefono_input.setText(cliente['telefono'] or '')
-            self.cp_input.setText(cliente.get('codigo_postal') or '')
-            self.ciudad_input.setText(cliente.get('ciudad') or '')
-            self.provincia_input.setText(cliente.get('provincia') or '')
-
-            # Seleccionar en combo
-            index = self.cliente_combo.findData(cliente['id'])
-            if index >= 0:
-                self.cliente_combo.setCurrentIndex(index)
-
+            self._rellenar_campos_cliente(dict(cliente))
             notify_success(self, "✓ " + tr("Cliente Encontrado"), tr("Cliente") + f": {cliente['nombre']}")
-
         else:
-            # No encontrado
             if ask_confirm(
                 self,
                 tr("Cliente No Encontrado"),
-                tr("No se encontró ningún cliente con DNI/Teléfono") + f": {busqueda}\n\n" + tr("¿Desea crear un nuevo cliente?")
+                tr("No se encontró ningún cliente con") + f": {busqueda}\n\n" + tr("¿Desea crear un nuevo cliente?")
             ):
-                # Pre-llenar el campo correspondiente
                 if busqueda.isdigit() and len(busqueda) >= 9:
                     self.telefono_input.setText(busqueda)
                 else:
