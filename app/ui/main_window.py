@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
         self._sidebar_expanded = True
         self._user_toggled_sidebar = False  # True si el usuario tocó el toggle manualmente
+        self._resize_auto_activo = False  # Desactivado hasta que la ventana esté completamente mostrada
         self.setup_ui()
         self.apply_styles()
         self.showMaximized()
@@ -103,6 +104,8 @@ class MainWindow(QMainWindow):
         # Usar bandera para ejecutar solo una vez
         if not hasattr(self, '_caja_verificada'):
             self._caja_verificada = True
+            # Activar auto-colapso por resize solo después del arranque (500ms)
+            QTimer.singleShot(500, lambda: setattr(self, '_resize_auto_activo', True))
             # Pequeño delay para asegurar que la UI esté completamente renderizada
             QTimer.singleShot(300, self._verificar_caja_pendiente)
 
@@ -449,6 +452,8 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if not hasattr(self, '_sidebar_expanded') or not hasattr(self, '_user_toggled_sidebar'):
             return
+        if not self._resize_auto_activo:
+            return  # Ignorar resize durante el arranque inicial
         width = event.size().width()
         # Auto-colapsar bajo 1100px; auto-expandir sobre 1200px (solo si no fue el usuario quien lo plegó)
         if width < 1100 and self._sidebar_expanded and not self._user_toggled_sidebar:

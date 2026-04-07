@@ -5,6 +5,7 @@ Reemplaza QMessageBox por InfoBar (toast) y MessageBox (confirmación).
 Importar: from app.utils.notify import notify_success, notify_error, notify_warning, notify_info, ask_confirm
 """
 from qfluentwidgets import InfoBar, InfoBarPosition, MessageBox
+import winsound
 
 
 def _find_top_widget(widget):
@@ -15,8 +16,17 @@ def _find_top_widget(widget):
     return parent
 
 
+def _beep(sound):
+    """Reproduce sonido del sistema Windows de forma no bloqueante."""
+    try:
+        winsound.MessageBeep(sound)
+    except Exception:
+        pass
+
+
 def notify_success(parent, title, message, duration=3000):
     """Notificación de éxito (verde, auto-desaparece)."""
+    _beep(winsound.MB_ICONASTERISK)  # Sonido de información/éxito
     InfoBar.success(
         title=title,
         content=message,
@@ -30,6 +40,7 @@ def notify_success(parent, title, message, duration=3000):
 
 def notify_error(parent, title, message, duration=5000):
     """Notificación de error (roja, duración más larga)."""
+    _beep(winsound.MB_ICONHAND)  # Sonido de error crítico
     InfoBar.error(
         title=title,
         content=message,
@@ -43,6 +54,7 @@ def notify_error(parent, title, message, duration=5000):
 
 def notify_warning(parent, title, message, duration=4000):
     """Notificación de advertencia (amarilla)."""
+    _beep(winsound.MB_ICONEXCLAMATION)  # Sonido de advertencia
     InfoBar.warning(
         title=title,
         content=message,
@@ -56,6 +68,7 @@ def notify_warning(parent, title, message, duration=4000):
 
 def notify_info(parent, title, message, duration=3000):
     """Notificación informativa (azul)."""
+    _beep(winsound.MB_ICONASTERISK)  # Sonido de información
     InfoBar.info(
         title=title,
         content=message,

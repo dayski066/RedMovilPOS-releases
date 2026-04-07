@@ -132,6 +132,12 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')  # Estilo moderno
 
+    # Forzar punto (.) como separador decimal en todos los QDoubleSpinBox del programa
+    from PyQt5.QtCore import QLocale
+    _locale_punto = QLocale(QLocale.C)
+    _locale_punto.setNumberOptions(QLocale.RejectGroupSeparator)
+    QLocale.setDefault(_locale_punto)
+
     # Aplicar Tema (por defecto dark, pero preparado para configuración)
     from app.ui.styles import apply_theme
     

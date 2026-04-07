@@ -24,6 +24,7 @@ from datetime import datetime
 class CajaTPVTab(QWidget):
     def __init__(self):
         super().__init__()
+        self.setFocusPolicy(Qt.StrongFocus)
         self.db = Database()
         self.db.connect()
         self.tpv_manager = CajaTpvManager(self.db)
@@ -32,7 +33,7 @@ class CajaTPVTab(QWidget):
 
         # Estado del TPV
         self.carrito = []  # Lista de items: {producto_id, nombre, precio_unit, cantidad, subtotal, iva, total}
-        self.cantidad_actual = 1  # Cantidad tecleada para próximo producto
+        self.cantidad_actual = 0  # Cantidad tecleada para próximo producto (0 = vacío, usar 1 al añadir)
 
         # Timer para debouncing en búsqueda
         self.search_timer = QTimer()
@@ -185,7 +186,7 @@ class CajaTPVTab(QWidget):
         cant_layout = QVBoxLayout(cant_frame)
         cant_label = QLabel(tr("Cantidad") + ":")
         cant_label.setStyleSheet("color: white; font-weight: bold;")
-        self.cantidad_display = QLabel("1")
+        self.cantidad_display = QLabel("0")
         self.cantidad_display.setAlignment(Qt.AlignCenter)
         self.cantidad_display.setStyleSheet("""
             color: white;
@@ -235,8 +236,8 @@ class CajaTPVTab(QWidget):
         acciones_layout = QGridLayout()
         acciones_layout.setSpacing(8)
 
-        # Botón + (Añadir producto manual) - F2
-        btn_add = QPushButton("+ (F2)")
+        # Botón + (Añadir producto manual)
+        btn_add = QPushButton("+")
         btn_add.setFont(QFont("", 24, QFont.Bold))
         btn_add.setMinimumHeight(70)
         apply_btn_success(btn_add)
@@ -244,8 +245,8 @@ class CajaTPVTab(QWidget):
         btn_add.setShortcut("F2")  # Atajo de teclado
         acciones_layout.addWidget(btn_add, 0, 0)
 
-        # Botón = (Cobrar) - F5
-        btn_cobrar = QPushButton("= (F5)")
+        # Botón = (Cobrar)
+        btn_cobrar = QPushButton("=")
         btn_cobrar.setFont(QFont("", 24, QFont.Bold))
         btn_cobrar.setMinimumHeight(70)
         apply_btn_warning(btn_cobrar)
@@ -296,7 +297,7 @@ class CajaTPVTab(QWidget):
 
     def tecla_numero(self, numero):
         """Añade un número a la cantidad actual"""
-        if self.cantidad_actual == 1:
+        if self.cantidad_actual == 0:
             self.cantidad_actual = int(numero)
         else:
             self.cantidad_actual = int(str(self.cantidad_actual) + numero)
@@ -316,18 +317,18 @@ class CajaTPVTab(QWidget):
             self.search_timer.start(500)  # 500ms delay
 
     def limpiar_cantidad(self):
-        """Resetea la cantidad a 1"""
-        self.cantidad_actual = 1
-        self.cantidad_display.setText("1")
+        """Resetea la cantidad a 0"""
+        self.cantidad_actual = 0
+        self.cantidad_display.setText("0")
 
         # Detener timer de auto-reset ya que se limpió manualmente
         self.reset_timer.stop()
 
     def auto_reset_cantidad(self):
-        """Auto-resetea la cantidad a 1 después de inactividad"""
-        if self.cantidad_actual != 1:
-            self.cantidad_actual = 1
-            self.cantidad_display.setText("1")
+        """Auto-resetea la cantidad a 0 después de inactividad"""
+        if self.cantidad_actual != 0:
+            self.cantidad_actual = 0
+            self.cantidad_display.setText("0")
             # Opcional: mostrar indicador visual temporal
             self.cantidad_display.setStyleSheet("""
                 color: #EBCB8B;
@@ -367,16 +368,16 @@ class CajaTPVTab(QWidget):
                 producto_id=producto['id'],
                 nombre=producto['descripcion'],
                 precio=producto['precio'],
-                cantidad=self.cantidad_actual
+                cantidad=self.cantidad_actual or 1
             )
             self.ean_input.clear()
             self.limpiar_cantidad()
-            self.ean_input.setFocus()
+            self.setFocus()
         else:
             notify_warning(self, tr("Producto No Encontrado"),
                               tr("No se encontró ningún producto con EAN/IMEI") + f": {ean}")
             self.ean_input.selectAll()
-            self.ean_input.setFocus()
+            self.setFocus()
 
     def añadir_al_carrito(self, producto_id, nombre, precio, cantidad=1):
         """Añade un producto al carrito"""
@@ -678,10 +679,13 @@ class CajaTPVTab(QWidget):
                 self.actualizar_tabla_carrito()
                 self.calcular_totales()
                 self.limpiar_cantidad()
-                self.ean_input.setFocus()
+                self.setFocus()
 
     def abrir_producto_manual(self):
         """Abre diálogo para añadir producto manual"""
+        if self.cantidad_actual == 0:
+            notify_warning(self, tr("Cantidad inválida"), tr("Introduce una cantidad antes de añadir un producto"))
+            return
         from app.ui.tpv_producto_manual_dialog import TPVProductoManualDialog
         dialog = TPVProductoManualDialog(self.cantidad_actual, parent=self)
         if dialog.exec_():
@@ -764,7 +768,7 @@ class CajaTPVTab(QWidget):
                 self.actualizar_tabla_carrito()
                 self.calcular_totales()
                 self.limpiar_cantidad()
-                self.ean_input.setFocus()
+                self.setFocus()
 
                 # Actualizar saldo de caja
                 self.actualizar_saldo_caja()
@@ -1017,10 +1021,28 @@ class CajaTPVTab(QWidget):
             + "👉 " + tr("Vaya a") + ": " + tr("Caja") + " → " + tr("Movimientos")
         )
 
+    def keyPressEvent(self, event):
+        """Captura teclado físico: dígitos → cantidad, + → añadir, Enter → cobrar"""
+        key = event.key()
+        if key in (Qt.Key_0, Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4,
+                   Qt.Key_5, Qt.Key_6, Qt.Key_7, Qt.Key_8, Qt.Key_9):
+            self.tecla_numero(str(key - Qt.Key_0))
+        elif key == Qt.Key_Plus:
+            self.abrir_producto_manual()
+        elif key in (Qt.Key_Return, Qt.Key_Enter):
+            if self.ean_input.text().strip():
+                self.buscar_producto_ean()
+            else:
+                self.abrir_cobro()
+        elif key in (Qt.Key_Backspace, Qt.Key_Delete):
+            self.limpiar_cantidad()
+        else:
+            super().keyPressEvent(event)
+
     def showEvent(self, event):
         """Evento al mostrar la pestaña"""
         super().showEvent(event)
-        self.ean_input.setFocus()
+        self.setFocus()
 
     def closeEvent(self, event):
         """Cierra la conexión a la base de datos al cerrar el tab"""
